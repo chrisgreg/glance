@@ -4,13 +4,20 @@
   // the hovered bucket, and a crosshair that dims what came before it.
   import type { Marker, Point } from '../api'
   import { refIconURL } from '../api'
-  import { fmtNum, fmtPoint } from '../format'
+  import { fmtMoney, fmtNum, fmtPoint } from '../format'
   import Icon from './Icon.svelte'
   import { Tween } from 'svelte/motion'
   import { cubicOut } from 'svelte/easing'
   import { dur } from '../motion'
 
-  let { series, markers = [], bucket, range }: { series: Point[]; markers?: Marker[]; bucket: 'hour' | 'day'; range: string } = $props()
+  let {
+    series,
+    markers = [],
+    bucket,
+    range,
+    revenue = [],
+    currency = '',
+  }: { series: Point[]; markers?: Marker[]; bucket: 'hour' | 'day'; range: string; revenue?: number[]; currency?: string } = $props()
 
   const H = 220
   const PAD_TOP = 44 // room for favicons
@@ -28,6 +35,12 @@
 
   const n = $derived(series.length)
   const max = $derived(Math.max(1, ...series.map((p) => p.visitors)))
+  // Revenue bars sit behind the spline on an independent scale, so a
+  // single sale never squashes the traffic line.
+  const hasRevenue = $derived(revenue.length === n && revenue.some((v) => v > 0))
+  const revMax = $derived(Math.max(1, ...revenue))
+  const barW = $derived(n <= 1 ? width : Math.max(2, (width / (n - 1)) * 0.6))
+  const revH = (v: number) => (v / revMax) * (H - PAD_TOP - 1) * 0.85
   const x = (i: number) => (n <= 1 ? 0 : (i / (n - 1)) * width)
   const y = (v: number) => H - 1 - (v / max) * (H - PAD_TOP - 1)
 
@@ -94,6 +107,13 @@
         </linearGradient>
         <clipPath id="future-{uid}"><rect x={hover === null ? 0 : hx} y="0" width={width} height={H} /></clipPath>
       </defs>
+      {#if hasRevenue}
+        {#each revenue as v, i (i)}
+          {#if v > 0}
+            <rect x={x(i) - barW / 2} y={H - 1 - revH(v)} width={barW} height={revH(v)} rx="2" fill="var(--up-revenue)" opacity={hover === null || hover === i ? 0.55 : 0.3} />
+          {/if}
+        {/each}
+      {/if}
       {#each markerIdx as m (m.t)}
         <line x1={x(m.i)} x2={x(m.i)} y1={PAD_TOP - 14} y2={y(series[m.i].visitors)} stroke="var(--up-border-control)" stroke-width="1" stroke-dasharray="2 4" />
       {/each}
@@ -117,6 +137,9 @@
         <div class="when">{fmtPoint(hp.t, bucket, range)}</div>
         <div class="row"><span><i class="dot people"></i>People</span><b>{fmtNum(hp.visitors)}</b></div>
         <div class="row"><span><i class="dot views"></i>Views</span><b>{fmtNum(hp.pageviews)}</b></div>
+        {#if hasRevenue}
+          <div class="row"><span><i class="dot revenue"></i>Revenue</span><b>{fmtMoney(revenue[hover!] ?? 0, currency)}</b></div>
+        {/if}
         {#if hm}
           <div class="divider"></div>
           <div class="when">Notable referrer</div>
@@ -161,6 +184,7 @@
   .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
   .dot.people { background: var(--up-accent-line); }
   .dot.views { background: var(--up-text-on-dark-muted); }
+  .dot.revenue { background: var(--up-revenue); }
   .axis { position: relative; display: flex; align-items: center; justify-content: space-between; height: 20px; padding: 0 var(--up-page-pad); box-sizing: border-box; }
   .edge { font: var(--up-type-caption); color: var(--up-text-muted); background: var(--up-bg); position: relative; z-index: 1; padding: 0 4px; }
   .dots { position: absolute; left: 0; right: 0; top: 0; height: 20px; }

@@ -10,7 +10,7 @@
 
 A tiny, self-hosted web analytics service. The useful stuff at a glance: visitors, page views, top pages, referrers, countries, devices and simple custom events. Not a product analytics platform.
 
-One Go binary, one SQLite file, one Docker container. Sites add a cookieless snippet under 1 KB. No sessions, funnels, cohorts, heatmaps or replay. No third-party services at runtime: favicons are fetched by Glance itself, the world map ships its own outlines, and brand icons are bundled.
+One Go binary, one SQLite file, one Docker container. Sites add a cookieless snippet of about 1 KB. No sessions, funnels, cohorts, heatmaps or replay. No third-party services at runtime: favicons are fetched by Glance itself, the world map ships its own outlines, and brand icons are bundled.
 
 </p>
 
@@ -191,6 +191,22 @@ Google strips the query from the referrer, so the only way to see which searches
 5. Open a site, **Settings**, **Connect Google Search Console**. Glance picks the property matching the domain, preferring a domain property (`sc-domain:`) over URL-prefix ones, and asks you to choose if none matches.
 
 Only the `webmasters.readonly` scope is requested. The refresh token is stored in the SQLite file alongside everything else; disconnecting revokes it with Google and deletes the stored terms.
+
+## Revenue from Polar
+
+If you sell through [Polar](https://polar.sh), each site can show revenue next to traffic, the way datafa.st does with Stripe. Open a site, **Settings**, **Polar**, and paste an organization access token (Polar dashboard, Settings, Developers; the `orders:read` scope is enough). Glance pulls two years of orders, then reconciles once a day. Add a webhook in Polar pointing at the URL shown in the panel, subscribed to the `order.*` events, and paste its secret so sales appear within seconds. If the organization sells several products, list the product ids that belong to this site so the others are ignored.
+
+The dashboard gets revenue, orders and revenue per visitor tiles, revenue bars behind the traffic chart, and a **Revenue** card broken down by first-touch referrer, source, campaign, landing page, country and product. Revenue is the net amount after discounts and before tax, less refunds, in the currency you charge in. The MCP server gains a `revenue` tool.
+
+### Attributing sales to a source
+
+Polar only knows what your checkout tells it. Add `data-attribution` to the snippet and it remembers each visitor's first referrer and landing URL in their own browser (`localStorage`, never sent to Glance, no cookie):
+
+```html
+<script defer src="https://glance.example.com/glance.js" data-site="site_…" data-attribution></script>
+```
+
+When you create a Polar checkout, read `glance.attribution()` (it returns `{ r: referrer, l: landing URL, t: timestamp }` or `null`) and pass `attr_ref` and `attr_landing` in the checkout `metadata`. Glance normalises them with the same rules as page views, so "Revenue by source" agrees with "Sources". Orders placed before you wire this up count towards totals but show as unattributed.
 
 ## Deploying with Dokploy (or any compose host)
 

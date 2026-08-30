@@ -1,7 +1,7 @@
 <script lang="ts">
   // Per-site dashboard: metrics, chart, breakdowns, world map, settings.
-  import { api, googleConnectURL, RANGES, refIconURL, siteIconURL, type Dim, type GoogleStatus, type Live, type Range, type Row, type SearchTerm, type Site, type Summary } from '../lib/api'
-  import { countryName, flag, fmtDelta, fmtNum, fmtRatio } from '../lib/format'
+  import { api, googleConnectURL, polarApi, RANGES, refIconURL, siteIconURL, type Dim, type GoogleStatus, type Live, type PolarStatus, type Range, type Revenue, type RevenueDim, type Row, type SearchTerm, type Site, type Summary } from '../lib/api'
+  import { countryName, flag, fmtDelta, fmtMoney, fmtNum, fmtRatio } from '../lib/format'
   import { pageIn, panel } from '../lib/motion'
   import Icon from '../lib/ui/Icon.svelte'
   import Segment from '../lib/ui/Segment.svelte'
@@ -93,6 +93,84 @@
   })
   // The card shows the same top 10 as the other breakdowns; the modal has everything.
   const TOP_TERMS = 10
+  // Polar: revenue next to traffic, attributed to first touch when the
+  // site passes it into checkout metadata.
+  let polar = $state<PolarStatus | null>(null)
+  let revenue = $state<Revenue | null>(null)
+  let polarBusy = $state(false)
+  let polarForm = $state({ access_token: '', server: '', product_ids: '', webhook_secret: '' })
+  let polarOpen = $state(false)
+  let revenueTab = $state<RevenueDim>('ref')
+
+  async function loadPolar() {
+    try {
+      polar = await polarApi.status(id)
+      if (polar.connection) polarForm = { access_token: '', server: polar.connection.server, product_ids: polar.connection.product_ids, webhook_secret: '' }
+    } catch {
+      polar = null
+    }
+  }
+  async function loadRevenue() {
+    if (!polar?.connected) {
+      revenue = null
+      return
+    }
+    try {
+      revenue = await polarApi.revenue(id, range)
+    } catch {
+      revenue = null
+    }
+  }
+  async function polarAction(run: () => Promise<unknown>) {
+    polarBusy = true
+    try {
+      await run()
+      error = ''
+      polarOpen = false
+      await loadPolar()
+      await loadRevenue()
+    } catch (e: any) {
+      error = e.message
+    } finally {
+      polarBusy = false
+    }
+  }
+  function savePolar() {
+    const input: Parameters<typeof polarApi.connect>[1] = { server: polarForm.server, product_ids: polarForm.product_ids }
+    if (polarForm.access_token.trim()) input.access_token = polarForm.access_token.trim()
+    if (polarForm.webhook_secret.trim()) input.webhook_secret = polarForm.webhook_secret.trim()
+    polarAction(() => polarApi.connect(id, input))
+  }
+  function disconnectPolar() {
+    if (!confirm('Disconnect Polar? Stored orders for this site are deleted.')) return
+    polarAction(() => polarApi.disconnect(id))
+  }
+  $effect(() => {
+    loadPolar()
+  })
+  $effect(() => {
+    range
+    polar?.connected
+    loadRevenue()
+  })
+  const REVENUE_DIMS: { value: RevenueDim; label: string }[] = [
+    { value: 'ref', label: 'Referrer' }, { value: 'source', label: 'Source' }, { value: 'campaign', label: 'Campaign' },
+    { value: 'landing', label: 'Landing' }, { value: 'country', label: 'Country' }, { value: 'product', label: 'Product' },
+  ]
+  const revenueRows = $derived(
+    (revenue?.breakdowns[revenueTab] ?? []).map((r) => ({
+      key: r.key || '∅',
+      label: revenueTab === 'country' ? countryName(r.key) || 'Unknown' : revenueTab === 'ref' ? r.key || 'Direct or unattributed' : r.key || 'Unattributed',
+      value: r.revenue,
+      prefix: revenueTab === 'country' ? flag(r.key) : undefined,
+      icon: revenueTab === 'ref' && r.key ? refIconURL(r.key) : '',
+      direct: revenueTab === 'ref' && r.key === '',
+      title: `${r.orders} ${r.orders === 1 ? 'order' : 'orders'}`,
+    })),
+  )
+  const money = $derived((v: number) => fmtMoney(v, revenue?.currency ?? ''))
+  const revenueSeries = $derived(revenue && stats && revenue.series.length === stats.series.length ? revenue.series.map((p) => p.revenue) : [])
+
   const termRows = $derived(
     terms.map((t) => ({
       key: t.query,
@@ -237,6 +315,53 @@
         <div class="text"><div class="label">Favicon</div><div class="hint">Fetched from your site by Glance, never from a third party</div></div>
         <Button variant="secondary" size="sm" onclick={() => api.refreshFavicon(id).then((s) => (site = { ...site!, ...s }))}>Refresh</Button>
       </div>
+      {#if polar}
+        <div class="setting google">
+          <div class="text">
+            <div class="label">Polar</div>
+            {#if polar.connected && polar.connection}
+              <div class="hint">
+                {polar.connection.server.replace('https://', '')}{#if polar.connection.product_ids} · {polar.connection.product_ids.split(',').length} {polar.connection.product_ids.includes(',') ? 'products' : 'product'}{/if}
+                · {fmtNum(polar.orders)} orders
+                {#if polar.connection.sync_error}
+                  · <span class="bad">{polar.connection.sync_error}</span>
+                {:else if polar.connection.synced_at}
+                  · synced {new Date(polar.connection.synced_at).toLocaleString()}
+                {:else}
+                  · first pull pending
+                {/if}
+                {#if !polar.connection.has_webhook_secret}
+                  · <span class="warn">no webhook, sales appear daily</span>
+                {/if}
+              </div>
+            {:else}
+              <div class="hint">Show revenue next to traffic. Needs an organization access token from Polar (Settings, Developers) with the orders:read scope.</div>
+            {/if}
+            {#if polarOpen}
+              <div class="polar-form" transition:panel>
+                <Input bind:value={polarForm.access_token} placeholder={polar.connected ? 'Access token (leave blank to keep)' : 'polar_oat_…'} aria-label="Polar access token" type="password" mono />
+                <Input bind:value={polarForm.product_ids} placeholder="Product ids, comma separated (blank = all)" aria-label="Polar product ids" mono />
+                <Input bind:value={polarForm.webhook_secret} placeholder={polar.connection?.has_webhook_secret ? 'Webhook secret (leave blank to keep)' : 'Webhook secret (optional)'} aria-label="Polar webhook secret" type="password" mono />
+                <Input bind:value={polarForm.server} placeholder="https://api.polar.sh" aria-label="Polar API server" mono />
+                <div class="hint">Webhook URL for Polar, subscribe to the order events: <code>{polar.webhook_url}</code></div>
+                <div class="google-actions">
+                  <Button size="sm" disabled={polarBusy} onclick={savePolar}>{polarBusy ? 'Checking' : polar.connected ? 'Save' : 'Connect'}</Button>
+                  <Button variant="secondary" size="sm" onclick={() => (polarOpen = false)}>Cancel</Button>
+                </div>
+              </div>
+            {/if}
+          </div>
+          <div class="google-actions">
+            {#if polar.connected}
+              <Button variant="secondary" size="sm" disabled={polarBusy} onclick={() => polarAction(() => polarApi.sync(id))}>{polarBusy ? 'Working' : 'Sync now'}</Button>
+              <Button variant="secondary" size="sm" onclick={() => (polarOpen = !polarOpen)}>Edit</Button>
+              <Button variant="secondary" size="sm" disabled={polarBusy} onclick={disconnectPolar}>Disconnect</Button>
+            {:else}
+              <Button variant="secondary" size="sm" onclick={() => (polarOpen = !polarOpen)}>Connect Polar</Button>
+            {/if}
+          </div>
+        </div>
+      {/if}
       {#if google}
         <div class="setting google">
           <div class="text">
@@ -289,16 +414,34 @@
       <MetricStat label="Visitors" value={fmtNum(stats.totals.visitors)} delta={fmtDelta(stats.totals.visitors, stats.previous.visitors)} />
       <MetricStat label="Page views" value={fmtNum(stats.totals.pageviews)} delta={fmtDelta(stats.totals.pageviews, stats.previous.pageviews)} />
       <MetricStat label="Views / visitor" value={fmtRatio(stats.totals.pageviews, stats.totals.visitors)} />
+      {#if revenue}
+        <MetricStat label="Revenue" value={money(revenue.totals.revenue)} delta={fmtDelta(revenue.totals.revenue, revenue.previous.revenue)} />
+        <MetricStat label="Orders" value={fmtNum(revenue.totals.orders)} delta={fmtDelta(revenue.totals.orders, revenue.previous.orders)} />
+        <MetricStat label="Revenue / visitor" value={stats.totals.visitors ? money(Math.round(revenue.totals.revenue / stats.totals.visitors)) : money(0)} />
+      {/if}
     </div>
     <div class="ranges"><Segment options={RANGES.map((r) => ({ value: r, label: r }))} value={range} gap={16} onchange={(r) => (range = r)} /></div>
   </div>
 
   {#key stats.range}
     <div in:pageIn class="stack">
-      <AreaChart series={stats.series} markers={stats.markers} bucket={stats.bucket} {range} />
+      <AreaChart series={stats.series} markers={stats.markers} bucket={stats.bucket} {range} revenue={revenueSeries} currency={revenue?.currency ?? ''} />
 
       <div class="grid">
         <Realtime minutes={liveData?.minutes ?? Array(30).fill(0)} total={liveData?.total_30m ?? 0} onmore={() => { mapView = 'live'; document.querySelector('.map-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }} />
+        {#if revenue}
+          <BarList
+            title="Revenue"
+            rows={revenueRows}
+            empty={revenueTab === 'ref' || revenueTab === 'source' || revenueTab === 'campaign' || revenueTab === 'landing' ? 'No attributed orders in this range. Pass attribution into checkout to see where sales come from.' : 'No orders in this range'}
+            tabs={REVENUE_DIMS}
+            tab={revenueTab}
+            ontab={(v) => (revenueTab = v)}
+            format={money}
+          >
+            {#snippet icon(r)}{#if revenueTab === 'ref'}<Icon src={r.icon} direct={r.direct} />{/if}{/snippet}
+          </BarList>
+        {/if}
         {#if google?.connected}
           <BarList title="Search terms" rows={termRows.slice(0, TOP_TERMS)} empty={range === '24h' ? 'Google reports search terms two to three days late' : 'No Google search terms for this range yet'} onmore={more('search')} />
         {/if}
@@ -404,6 +547,8 @@
   .google .text { gap: 6px; }
   .hint code { font: var(--up-type-code); user-select: all; }
   .hint.ok { color: var(--up-operational-strong); }
+  .warn { color: var(--up-text-muted); }
+  .polar-form { display: flex; flex-direction: column; gap: 8px; width: 100%; max-width: 460px; padding-top: 4px; }
   .google-actions { display: flex; gap: 8px; flex-shrink: 0; }
   .btn { font: var(--up-type-ui); color: var(--up-ink); background: var(--up-bg); box-shadow: inset 0 0 0 1px var(--up-border-control); border-radius: var(--up-radius-control); height: 30px; padding: 0 12px; display: inline-flex; align-items: center; white-space: nowrap; }
   .btn:hover { background: var(--up-bg-hover); color: var(--up-ink); }

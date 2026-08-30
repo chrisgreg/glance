@@ -8,6 +8,22 @@ export function fmtNum(n: number): string {
 }
 
 /** Percentage change as "+8%" / "-3%"; "" when there is no baseline. */
+/** Minor units (cents, pence) in a currency, compact for large sums. */
+export function fmtMoney(minor: number, currency: string): string {
+  const code = (currency || 'usd').toUpperCase()
+  const amount = minor / 100
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: 'currency',
+      currency: code,
+      maximumFractionDigits: Math.abs(amount) >= 1000 ? 0 : 2,
+      minimumFractionDigits: Math.abs(amount) >= 1000 ? 0 : 2,
+    }).format(amount)
+  } catch {
+    return `${amount.toFixed(2)} ${code}`
+  }
+}
+
 export function fmtDelta(now: number, prev: number): string {
   if (prev === 0) return now > 0 ? 'new' : ''
   const d = Math.round(((now - prev) / prev) * 100)

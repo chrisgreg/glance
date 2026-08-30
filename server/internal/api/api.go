@@ -25,6 +25,7 @@ import (
 	"github.com/chrisgreg/glance/server/internal/events"
 	"github.com/chrisgreg/glance/server/internal/favicons"
 	"github.com/chrisgreg/glance/server/internal/mcp"
+	"github.com/chrisgreg/glance/server/internal/polar"
 	"github.com/chrisgreg/glance/server/internal/rollup"
 	"github.com/chrisgreg/glance/server/internal/searchconsole"
 	"github.com/chrisgreg/glance/server/internal/settings"
@@ -63,6 +64,8 @@ type Server struct {
 	Tokens   *tokens.Store
 	// Google links sites to Search Console for search terms.
 	Google *searchconsole.Service
+	// Polar links sites to a Polar organisation for revenue.
+	Polar *polar.Service
 	// Retention defaults and whether the environment pins them.
 	RetentionDays    int
 	RetentionFromEnv bool
@@ -79,6 +82,14 @@ func (s *Server) searchStore() *searchconsole.Store {
 		return nil
 	}
 	return s.Google.Store
+}
+
+// polarStore is nil when no Polar service is wired (tests).
+func (s *Server) polarStore() *polar.Store {
+	if s.Polar == nil {
+		return nil
+	}
+	return s.Polar.Store
 }
 
 // freshen rebuilds today's rollups if the last rebuild is older than 30s, so
@@ -137,6 +148,12 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api/v1/sites/{id}/google/sync", s.adminAuth(s.googleSync))
 	mux.Handle("GET /api/v1/sites/{id}/search-terms", s.adminAuth(s.searchTerms))
 	mux.HandleFunc("GET "+googleCallbackPath, s.googleCallback)
+	mux.Handle("GET /api/v1/sites/{id}/polar", s.adminAuth(s.polarGet))
+	mux.Handle("PUT /api/v1/sites/{id}/polar", s.adminAuth(s.polarConnect))
+	mux.Handle("DELETE /api/v1/sites/{id}/polar", s.adminAuth(s.polarDisconnect))
+	mux.Handle("POST /api/v1/sites/{id}/polar/sync", s.adminAuth(s.polarSync))
+	mux.Handle("GET /api/v1/sites/{id}/revenue", s.adminAuth(s.siteRevenue))
+	mux.HandleFunc("POST /api/v1/polar/webhook/{id}", s.polarWebhook)
 	mux.Handle("GET /api/v1/favicon", s.adminAuth(s.refFavicon))
 	mux.Handle("GET /api/v1/status", s.adminAuth(s.status))
 	mux.Handle("GET /api/v1/settings", s.adminAuth(s.getSettings))
@@ -148,7 +165,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/v1/export", s.adminAuth(s.export))
 
 	// MCP (read-only) for AI agents: Streamable HTTP at /mcp.
-	mux.Handle("/mcp", s.mcpAuth(mcp.Handler(mcp.NewServer(mcp.Stores{Sites: s.Sites, Stats: s.Stats, Search: s.searchStore(), Now: s.Now}, Version), s.Log)))
+	mux.Handle("/mcp", s.mcpAuth(mcp.Handler(mcp.NewServer(mcp.Stores{Sites: s.Sites, Stats: s.Stats, Search: s.searchStore(), Revenue: s.polarStore(), Now: s.Now}, Version), s.Log)))
 
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "no such endpoint")
@@ -793,8 +810,12 @@ func readJSON(w http.ResponseWriter, r *http.Request, v any) bool {
 
 func (s *Server) fail(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, sites.ErrNotFound), errors.Is(err, tokens.ErrNotFound), errors.Is(err, searchconsole.ErrNotConnected):
+	case errors.Is(err, sites.ErrNotFound), errors.Is(err, tokens.ErrNotFound), errors.Is(err, searchconsole.ErrNotConnected), errors.Is(err, polar.ErrNotConnected):
 		writeError(w, http.StatusNotFound, "not_found", err.Error())
+	case errors.Is(err, polar.ErrInvalid):
+		writeError(w, http.StatusUnprocessableEntity, "invalid", err.Error())
+	case strings.HasPrefix(err.Error(), "polar returned"):
+		writeError(w, http.StatusBadGateway, "polar", err.Error())
 	case errors.Is(err, searchconsole.ErrReconnect):
 		writeError(w, http.StatusConflict, "reconnect", err.Error())
 	case strings.HasPrefix(err.Error(), "google returned"):

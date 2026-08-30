@@ -32,12 +32,14 @@
     tabs,
     tab,
     ontab,
+    format = fmtNum,
   }: {
     title?: string
     rows: BarRow[]
     empty?: string
     icon?: Snippet<[BarRow]>
     bare?: boolean
+    format?: (v: number) => string
     onmore?: () => void
     tabs?: { value: T; label: string }[]
     tab?: T
@@ -78,7 +80,7 @@
               {#if r.prefix}<span class="prefix">{r.prefix}</span>{/if}
               <span class="label">{r.label}</span>
             </div>
-            <div class="value">{fmtNum(r.value)}</div>
+            <div class="value">{format(r.value)}</div>
           </div>
         {/each}
       </div>

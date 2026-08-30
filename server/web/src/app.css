@@ -1,5 +1,6 @@
 /* Design tokens — from the UP design system (tokens/*.css). */
 :root {
+  --up-revenue: #3fa66f;
   --up-bg: #FDFDFE;
   --up-bg-hover: #FAFAFC;
   --up-ink: #1A1B25;

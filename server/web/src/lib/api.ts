@@ -127,6 +127,51 @@ export interface SearchTerm {
   position: number
 }
 
+export interface PolarConnection {
+  site_id: string
+  server: string
+  product_ids: string
+  has_webhook_secret: boolean
+  connected_at: string
+  synced_at: string
+  sync_error: string
+}
+
+export interface PolarStatus {
+  connected: boolean
+  connection?: PolarConnection
+  webhook_url: string
+  orders: number
+}
+
+export interface RevenuePoint {
+  t: string
+  revenue: number // minor units
+  orders: number
+}
+
+export interface RevenueTotals {
+  revenue: number
+  orders: number
+}
+
+export interface RevenueRow {
+  key: string
+  revenue: number
+  orders: number
+}
+
+export type RevenueDim = 'ref' | 'source' | 'campaign' | 'landing' | 'country' | 'product'
+
+export interface Revenue {
+  range: Range
+  currency: string
+  totals: RevenueTotals
+  previous: RevenueTotals
+  series: RevenuePoint[]
+  breakdowns: Record<RevenueDim, RevenueRow[]>
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -192,6 +237,14 @@ export const api = {
   googleDisconnect: (id: string) => request<void>('DELETE', `/api/v1/sites/${id}/google`),
   googleSync: (id: string) => request<{ status: GoogleStatus; redirect_uri: string }>('POST', `/api/v1/sites/${id}/google/sync`),
   searchTerms: (id: string, range: Range) => request<{ range: Range; rows: SearchTerm[] }>('GET', `/api/v1/sites/${id}/search-terms?range=${range}&limit=500`),
+}
+
+export const polarApi = {
+  status: (id: string) => request<PolarStatus>('GET', `/api/v1/sites/${id}/polar`),
+  connect: (id: string, input: { access_token?: string; server?: string; product_ids?: string; webhook_secret?: string }) => request<PolarStatus>('PUT', `/api/v1/sites/${id}/polar`, input),
+  disconnect: (id: string) => request<void>('DELETE', `/api/v1/sites/${id}/polar`),
+  sync: (id: string) => request<PolarStatus>('POST', `/api/v1/sites/${id}/polar/sync`),
+  revenue: (id: string, range: Range, limit = 10) => request<Revenue>('GET', `/api/v1/sites/${id}/revenue?range=${range}&limit=${limit}`),
 }
 
 /** Browser destination that starts the Google Search Console connect flow. */

@@ -17,6 +17,7 @@ import (
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/chrisgreg/glance/server/internal/polar"
 	"github.com/chrisgreg/glance/server/internal/searchconsole"
 	"github.com/chrisgreg/glance/server/internal/sites"
 	"github.com/chrisgreg/glance/server/internal/stats"
@@ -24,10 +25,11 @@ import (
 
 // Stores is what the tools read from.
 type Stores struct {
-	Sites  *sites.Store
-	Stats  *stats.Store
-	Search *searchconsole.Store
-	Now    func() time.Time
+	Sites   *sites.Store
+	Stats   *stats.Store
+	Search  *searchconsole.Store
+	Revenue *polar.Store
+	Now     func() time.Time
 }
 
 // NewServer builds the MCP server with every tool registered.
@@ -41,7 +43,8 @@ func NewServer(st Stores, version string) *sdk.Server {
 			"Every stats result includes a comparison with the equal window before it (delta_pct), a trend (second half of the window vs the first), and spikes (buckets far above the window's mean). " +
 			"Start with overview for all sites at once, then site_stats for detail and breakdown for full lists of pages, referrers, countries, devices, browsers, operating systems or events. " +
 			"Sites can be referred to by id, name or domain. " +
-			"search_terms lists the Google search queries that brought clicks and impressions, from Search Console; it is only populated for sites the owner has connected, and Google's data trails by two to three days.",
+			"search_terms lists the Google search queries that brought clicks and impressions, from Search Console; it is only populated for sites the owner has connected, and Google's data trails by two to three days. " +
+			"revenue gives Polar sales for a site: totals, the previous window, a series and revenue attributed to first-touch referrer, source, campaign, landing page, country and product. Amounts are in minor units (cents, pence) of the given currency.",
 	})
 	t := &tools{st: st}
 	ro := &sdk.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: boolPtr(false)}
@@ -56,6 +59,8 @@ func NewServer(st Stores, version string) *sdk.Server {
 		Description: "The full list for one dimension of one site over a range, best first: page, ref (referrer host, empty = direct), country (ISO code, empty = unknown), region (time-zone city), device, browser, os, event, utm_source or utm_campaign."}, t.breakdown)
 	sdk.AddTool(s, &sdk.Tool{Name: "search_terms", Title: "Google search terms", Annotations: ro,
 		Description: "The Google search queries that sent visitors to one site over a range, from Search Console, most clicked first, with impressions and average position. Empty when the site is not connected."}, t.searchTerms)
+	sdk.AddTool(s, &sdk.Tool{Name: "revenue", Title: "Revenue", Annotations: ro,
+		Description: "Polar revenue for one site over a range: totals and previous window (minor currency units), a per-bucket series, and revenue by first-touch referrer, source, campaign, landing page, country and product. Attribution exists only for orders placed after the site started passing it to checkout. Empty when the site is not connected."}, t.revenue)
 	return s
 }
 
@@ -441,6 +446,76 @@ func (t *tools) searchTerms(ctx context.Context, _ *sdk.CallToolRequest, in Sear
 		return nil, out, err
 	}
 	out.Rows = rows
+	return nil, out, nil
+}
+
+type RevenueIn struct {
+	Site  string `json:"site" jsonschema:"site id, name or domain"`
+	Range string `json:"range,omitempty" jsonschema:"24h, 7d, 30d or 90d; default 30d"`
+	Limit int    `json:"limit,omitempty" jsonschema:"rows per breakdown, 1-100, default 10"`
+}
+
+type RevenueOut struct {
+	Site       string                 `json:"site"`
+	Range      string                 `json:"range"`
+	Connected  bool                   `json:"connected"`
+	Currency   string                 `json:"currency" jsonschema:"ISO code; amounts are in its minor unit"`
+	Totals     polar.Totals           `json:"totals"`
+	Previous   polar.Totals           `json:"previous"`
+	DeltaPct   *float64               `json:"revenue_delta_pct"`
+	Series     []polar.Point          `json:"series"`
+	Breakdowns map[string][]polar.Row `json:"breakdowns" jsonschema:"keys ref, source, campaign, landing, country, product; empty key = unattributed"`
+}
+
+func (t *tools) revenue(ctx context.Context, _ *sdk.CallToolRequest, in RevenueIn) (*sdk.CallToolResult, RevenueOut, error) {
+	s, err := t.resolve(ctx, in.Site)
+	if err != nil {
+		return nil, RevenueOut{}, err
+	}
+	if in.Range == "" {
+		in.Range = "30d"
+	}
+	rng, err := normRange(in.Range)
+	if err != nil {
+		return nil, RevenueOut{}, err
+	}
+	limit := in.Limit
+	if limit <= 0 {
+		limit = 10
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	out := RevenueOut{Site: s.Name, Range: rng, Series: []polar.Point{}, Breakdowns: map[string][]polar.Row{}}
+	if t.st.Revenue == nil {
+		return nil, out, nil
+	}
+	if _, err := t.st.Revenue.Get(ctx, s.ID); err != nil {
+		if errors.Is(err, polar.ErrNotConnected) {
+			return nil, out, nil
+		}
+		return nil, out, err
+	}
+	out.Connected = true
+	from, to, bucket := stats.Window(rng, t.st.Now())
+	if out.Currency, err = t.st.Revenue.Currency(ctx, s.ID); err != nil {
+		return nil, out, err
+	}
+	if out.Series, err = t.st.Revenue.Series(ctx, s.ID, from, to, bucket); err != nil {
+		return nil, out, err
+	}
+	if out.Totals, err = t.st.Revenue.Totals(ctx, s.ID, from, to); err != nil {
+		return nil, out, err
+	}
+	if out.Previous, err = t.st.Revenue.Totals(ctx, s.ID, from.Add(-to.Sub(from)), from); err != nil {
+		return nil, out, err
+	}
+	out.DeltaPct = pct(out.Totals.Revenue, out.Previous.Revenue)
+	for _, dim := range polar.Dims {
+		if out.Breakdowns[dim], err = t.st.Revenue.Breakdown(ctx, s.ID, dim, from, to, limit); err != nil {
+			return nil, out, err
+		}
+	}
 	return nil, out, nil
 }
 

@@ -21,6 +21,7 @@ import (
 	"github.com/chrisgreg/glance/server/internal/events"
 	"github.com/chrisgreg/glance/server/internal/favicons"
 	"github.com/chrisgreg/glance/server/internal/ids"
+	"github.com/chrisgreg/glance/server/internal/polar"
 	"github.com/chrisgreg/glance/server/internal/rollup"
 	"github.com/chrisgreg/glance/server/internal/searchconsole"
 	"github.com/chrisgreg/glance/server/internal/settings"
@@ -73,15 +74,24 @@ func run() error {
 	if google.Configured() {
 		log.Info("google.enabled", "callback", "/api/v1/google/callback")
 	}
+	polarSvc := polar.NewService(polar.NewStore(db), polar.NewClient(), log)
+	polarSvc.Domain = func(ctx context.Context, id string) string {
+		st, err := siteStore.Get(ctx, id)
+		if err != nil {
+			return ""
+		}
+		return st.Domain
+	}
 	srv := &api.Server{
 		DB: db, Log: log, Sites: siteStore, Settings: st, Writer: writer, Stats: stats.New(db),
 		Favicons: fetcher, Admin: admin, Web: web.Handler(), TrustProxy: true, MCPToken: cfg.MCPToken,
 		Tokens: tokens.New(db), RetentionDays: cfg.RetentionDays, RetentionFromEnv: cfg.RetentionDaysSet,
-		StartedAt: time.Now(), DatabasePath: cfg.DatabasePath, Google: google,
+		StartedAt: time.Now(), DatabasePath: cfg.DatabasePath, Google: google, Polar: polarSvc,
 	}
 
 	go maintenance(ctx, log, db, siteStore, st, fetcher, cfg)
 	go searchConsoleSync(ctx, google)
+	go polarSync(ctx, polarSvc)
 
 	httpServer := &http.Server{
 		Addr:              net.JoinHostPort("", strconv.Itoa(cfg.Port)),
@@ -167,6 +177,22 @@ func maintenance(ctx context.Context, log *slog.Logger, db *sqlDB, siteStore *si
 }
 
 type sqlDB = database.DB
+
+// polarSync reconciles orders for every connected site once a day, so
+// refunds and missed webhooks are picked up.
+func polarSync(ctx context.Context, svc *polar.Service) {
+	t := time.NewTicker(time.Hour)
+	defer t.Stop()
+	svc.SyncStale(ctx, 20*time.Hour)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			svc.SyncStale(ctx, 20*time.Hour)
+		}
+	}
+}
 
 // searchConsoleSync pulls search terms for every connected site once a day.
 // Google's data trails by a few days, so the cadence is checked hourly but
