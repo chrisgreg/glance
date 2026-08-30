@@ -28,6 +28,11 @@ type Config struct {
 	// MCPToken, when set, is a bearer token that grants read-only access to
 	// the MCP endpoint (/mcp). The admin login works there too.
 	MCPToken string
+
+	// GoogleClientID and GoogleClientSecret are an OAuth client from Google
+	// Cloud. Both must be set to offer "Connect Google Search Console".
+	GoogleClientID     string
+	GoogleClientSecret string
 }
 
 // Load reads configuration from the environment, applying defaults.
@@ -40,6 +45,9 @@ func Load() (Config, error) {
 		AdminUser:     env("GLANCE_ADMIN_USER", ""),
 		AdminPassword: env("GLANCE_ADMIN_PASSWORD", ""),
 		MCPToken:      strings.TrimSpace(env("GLANCE_MCP_TOKEN", "")),
+
+		GoogleClientID:     strings.TrimSpace(env("GLANCE_GOOGLE_CLIENT_ID", "")),
+		GoogleClientSecret: strings.TrimSpace(env("GLANCE_GOOGLE_CLIENT_SECRET", "")),
 	}
 	if v := os.Getenv("GLANCE_PORT"); v != "" {
 		p, err := strconv.Atoi(v)
@@ -64,6 +72,9 @@ func Load() (Config, error) {
 	}
 	if c.MCPToken != "" && len(c.MCPToken) < 16 {
 		return c, fmt.Errorf("GLANCE_MCP_TOKEN must be at least 16 characters")
+	}
+	if (c.GoogleClientID == "") != (c.GoogleClientSecret == "") {
+		return c, fmt.Errorf("GLANCE_GOOGLE_CLIENT_ID and GLANCE_GOOGLE_CLIENT_SECRET must be set together")
 	}
 	return c, nil
 }

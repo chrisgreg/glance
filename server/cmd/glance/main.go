@@ -22,6 +22,7 @@ import (
 	"github.com/chrisgreg/glance/server/internal/favicons"
 	"github.com/chrisgreg/glance/server/internal/ids"
 	"github.com/chrisgreg/glance/server/internal/rollup"
+	"github.com/chrisgreg/glance/server/internal/searchconsole"
 	"github.com/chrisgreg/glance/server/internal/settings"
 	"github.com/chrisgreg/glance/server/internal/sites"
 	"github.com/chrisgreg/glance/server/internal/stats"
@@ -68,14 +69,19 @@ func run() error {
 	fetcher := favicons.New(db)
 
 	st := settings.New(db)
+	google := searchconsole.NewService(searchconsole.NewStore(db), searchconsole.NewClient(cfg.GoogleClientID, cfg.GoogleClientSecret), log)
+	if google.Configured() {
+		log.Info("google.enabled", "callback", "/api/v1/google/callback")
+	}
 	srv := &api.Server{
 		DB: db, Log: log, Sites: siteStore, Settings: st, Writer: writer, Stats: stats.New(db),
 		Favicons: fetcher, Admin: admin, Web: web.Handler(), TrustProxy: true, MCPToken: cfg.MCPToken,
 		Tokens: tokens.New(db), RetentionDays: cfg.RetentionDays, RetentionFromEnv: cfg.RetentionDaysSet,
-		StartedAt: time.Now(), DatabasePath: cfg.DatabasePath,
+		StartedAt: time.Now(), DatabasePath: cfg.DatabasePath, Google: google,
 	}
 
 	go maintenance(ctx, log, db, siteStore, st, fetcher, cfg)
+	go searchConsoleSync(ctx, google)
 
 	httpServer := &http.Server{
 		Addr:              net.JoinHostPort("", strconv.Itoa(cfg.Port)),
@@ -161,6 +167,26 @@ func maintenance(ctx context.Context, log *slog.Logger, db *sqlDB, siteStore *si
 }
 
 type sqlDB = database.DB
+
+// searchConsoleSync pulls search terms for every connected site once a day.
+// Google's data trails by a few days, so the cadence is checked hourly but
+// each site is refreshed only when its last pull is over 20 hours old.
+func searchConsoleSync(ctx context.Context, google *searchconsole.Service) {
+	if !google.Configured() {
+		return
+	}
+	t := time.NewTicker(time.Hour)
+	defer t.Stop()
+	google.SyncStale(ctx, 20*time.Hour)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			google.SyncStale(ctx, 20*time.Hour)
+		}
+	}
+}
 
 func newLogger(level string) *slog.Logger {
 	var l slog.Level

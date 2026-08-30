@@ -102,6 +102,31 @@ export interface Token {
   last_used_at?: string
 }
 
+export interface GoogleConnection {
+  site_id: string
+  property: string
+  email: string
+  connected_at: string
+  synced_at: string
+  sync_error: string
+}
+
+export interface GoogleStatus {
+  configured: boolean
+  connected: boolean
+  connection?: GoogleConnection
+  available_properties?: string[]
+  needs_reconnect: boolean
+  latest_day?: string
+}
+
+export interface SearchTerm {
+  query: string
+  clicks: number
+  impressions: number
+  position: number
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -161,7 +186,16 @@ export const api = {
   createToken: (name: string) => request<{ token: Token; secret: string }>('POST', '/api/v1/tokens', { name }),
   deleteToken: (id: string) => request<void>('DELETE', `/api/v1/tokens/${id}`),
   rollup: () => request<void>('POST', '/api/v1/rollup'),
+
+  google: (id: string) => request<{ status: GoogleStatus; redirect_uri: string }>('GET', `/api/v1/sites/${id}/google`),
+  googleSetProperty: (id: string, property: string) => request<{ status: GoogleStatus; redirect_uri: string }>('PATCH', `/api/v1/sites/${id}/google`, { property }),
+  googleDisconnect: (id: string) => request<void>('DELETE', `/api/v1/sites/${id}/google`),
+  googleSync: (id: string) => request<{ status: GoogleStatus; redirect_uri: string }>('POST', `/api/v1/sites/${id}/google/sync`),
+  searchTerms: (id: string, range: Range) => request<{ range: Range; rows: SearchTerm[] }>('GET', `/api/v1/sites/${id}/search-terms?range=${range}&limit=500`),
 }
+
+/** Browser destination that starts the Google Search Console connect flow. */
+export const googleConnectURL = (id: string) => `/api/v1/sites/${id}/google/connect`
 
 /** URL of a site's stored icon (404 when none). */
 export const siteIconURL = (id: string) => `/api/v1/sites/${id}/favicon`

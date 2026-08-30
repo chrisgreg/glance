@@ -17,6 +17,7 @@ import (
 	"github.com/chrisgreg/glance/server/internal/events"
 	"github.com/chrisgreg/glance/server/internal/favicons"
 	"github.com/chrisgreg/glance/server/internal/rollup"
+	"github.com/chrisgreg/glance/server/internal/searchconsole"
 	"github.com/chrisgreg/glance/server/internal/settings"
 	"github.com/chrisgreg/glance/server/internal/sites"
 	"github.com/chrisgreg/glance/server/internal/stats"
@@ -35,6 +36,7 @@ func newServer(t *testing.T, user, pass string) *Server {
 		DB: db, Log: log, Sites: sites.New(db), Settings: settings.New(db), Writer: events.NewWriter(db, log),
 		Stats: stats.New(db), Favicons: favicons.New(db), Admin: auth.NewAdmin(user, pass, auth.NewSessionStore(db)),
 		Tokens: tokens.New(db), RetentionDays: 7,
+		Google: searchconsole.NewService(searchconsole.NewStore(db), searchconsole.NewClient("", ""), log),
 	}
 }
 

@@ -26,6 +26,7 @@ import (
 	"github.com/chrisgreg/glance/server/internal/favicons"
 	"github.com/chrisgreg/glance/server/internal/mcp"
 	"github.com/chrisgreg/glance/server/internal/rollup"
+	"github.com/chrisgreg/glance/server/internal/searchconsole"
 	"github.com/chrisgreg/glance/server/internal/settings"
 	"github.com/chrisgreg/glance/server/internal/sites"
 	"github.com/chrisgreg/glance/server/internal/stats"
@@ -60,6 +61,8 @@ type Server struct {
 	// MCPToken grants read-only access to /mcp when set.
 	MCPToken string
 	Tokens   *tokens.Store
+	// Google links sites to Search Console for search terms.
+	Google *searchconsole.Service
 	// Retention defaults and whether the environment pins them.
 	RetentionDays    int
 	RetentionFromEnv bool
@@ -68,6 +71,14 @@ type Server struct {
 
 	rollMu   sync.Mutex
 	lastRoll time.Time
+}
+
+// searchStore is nil when no Google service is wired (tests).
+func (s *Server) searchStore() *searchconsole.Store {
+	if s.Google == nil {
+		return nil
+	}
+	return s.Google.Store
 }
 
 // freshen rebuilds today's rollups if the last rebuild is older than 30s, so
@@ -119,6 +130,13 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/v1/sites/{id}/live", s.adminAuth(s.siteLive))
 	mux.Handle("POST /api/v1/sites/{id}/refresh-favicon", s.adminAuth(s.refreshFavicon))
 	mux.Handle("GET /api/v1/sites/{id}/favicon", s.adminAuth(s.siteFavicon))
+	mux.Handle("GET /api/v1/sites/{id}/google", s.adminAuth(s.googleStatus))
+	mux.Handle("GET /api/v1/sites/{id}/google/connect", s.adminAuth(s.googleConnect))
+	mux.Handle("PATCH /api/v1/sites/{id}/google", s.adminAuth(s.googleSetProperty))
+	mux.Handle("DELETE /api/v1/sites/{id}/google", s.adminAuth(s.googleDisconnect))
+	mux.Handle("POST /api/v1/sites/{id}/google/sync", s.adminAuth(s.googleSync))
+	mux.Handle("GET /api/v1/sites/{id}/search-terms", s.adminAuth(s.searchTerms))
+	mux.HandleFunc("GET "+googleCallbackPath, s.googleCallback)
 	mux.Handle("GET /api/v1/favicon", s.adminAuth(s.refFavicon))
 	mux.Handle("GET /api/v1/status", s.adminAuth(s.status))
 	mux.Handle("GET /api/v1/settings", s.adminAuth(s.getSettings))
@@ -130,7 +148,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/v1/export", s.adminAuth(s.export))
 
 	// MCP (read-only) for AI agents: Streamable HTTP at /mcp.
-	mux.Handle("/mcp", s.mcpAuth(mcp.Handler(mcp.NewServer(mcp.Stores{Sites: s.Sites, Stats: s.Stats, Now: s.Now}, Version), s.Log)))
+	mux.Handle("/mcp", s.mcpAuth(mcp.Handler(mcp.NewServer(mcp.Stores{Sites: s.Sites, Stats: s.Stats, Search: s.searchStore(), Now: s.Now}, Version), s.Log)))
 
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "no such endpoint")
@@ -775,8 +793,12 @@ func readJSON(w http.ResponseWriter, r *http.Request, v any) bool {
 
 func (s *Server) fail(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, sites.ErrNotFound), errors.Is(err, tokens.ErrNotFound):
+	case errors.Is(err, sites.ErrNotFound), errors.Is(err, tokens.ErrNotFound), errors.Is(err, searchconsole.ErrNotConnected):
 		writeError(w, http.StatusNotFound, "not_found", err.Error())
+	case errors.Is(err, searchconsole.ErrReconnect):
+		writeError(w, http.StatusConflict, "reconnect", err.Error())
+	case strings.HasPrefix(err.Error(), "google returned"):
+		writeError(w, http.StatusBadGateway, "google", err.Error())
 	case errors.Is(err, sites.ErrInvalid), errors.Is(err, tokens.ErrInvalid), errors.Is(err, settings.ErrInvalid):
 		writeError(w, http.StatusUnprocessableEntity, "invalid", err.Error())
 	default:

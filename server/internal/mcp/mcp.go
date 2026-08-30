@@ -6,6 +6,7 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -16,15 +17,17 @@ import (
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/chrisgreg/glance/server/internal/searchconsole"
 	"github.com/chrisgreg/glance/server/internal/sites"
 	"github.com/chrisgreg/glance/server/internal/stats"
 )
 
 // Stores is what the tools read from.
 type Stores struct {
-	Sites *sites.Store
-	Stats *stats.Store
-	Now   func() time.Time
+	Sites  *sites.Store
+	Stats  *stats.Store
+	Search *searchconsole.Store
+	Now    func() time.Time
 }
 
 // NewServer builds the MCP server with every tool registered.
@@ -37,7 +40,8 @@ func NewServer(st Stores, version string) *sdk.Server {
 			"Ranges are 24h, 7d, 30d or 90d and always end now. Visitors are daily uniques (multi-day totals sum daily uniques); pageviews are raw counts. " +
 			"Every stats result includes a comparison with the equal window before it (delta_pct), a trend (second half of the window vs the first), and spikes (buckets far above the window's mean). " +
 			"Start with overview for all sites at once, then site_stats for detail and breakdown for full lists of pages, referrers, countries, devices, browsers, operating systems or events. " +
-			"Sites can be referred to by id, name or domain.",
+			"Sites can be referred to by id, name or domain. " +
+			"search_terms lists the Google search queries that brought clicks and impressions, from Search Console; it is only populated for sites the owner has connected, and Google's data trails by two to three days.",
 	})
 	t := &tools{st: st}
 	ro := &sdk.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: boolPtr(false)}
@@ -50,6 +54,8 @@ func NewServer(st Stores, version string) *sdk.Server {
 		Description: "Full detail for one site over a range: totals, previous window, delta, trend, spikes, the time series (hourly for 24h and 7d, daily for 30d and 90d) and the top 10 of every breakdown."}, t.siteStats)
 	sdk.AddTool(s, &sdk.Tool{Name: "breakdown", Title: "Breakdown", Annotations: ro,
 		Description: "The full list for one dimension of one site over a range, best first: page, ref (referrer host, empty = direct), country (ISO code, empty = unknown), region (time-zone city), device, browser, os, event, utm_source or utm_campaign."}, t.breakdown)
+	sdk.AddTool(s, &sdk.Tool{Name: "search_terms", Title: "Google search terms", Annotations: ro,
+		Description: "The Google search queries that sent visitors to one site over a range, from Search Console, most clicked first, with impressions and average position. Empty when the site is not connected."}, t.searchTerms)
 	return s
 }
 
@@ -384,6 +390,58 @@ func (t *tools) breakdown(ctx context.Context, _ *sdk.CallToolRequest, in Breakd
 		return nil, BreakdownOut{}, err
 	}
 	return nil, BreakdownOut{Site: s.Name, Dim: dim, Range: rng, Rows: rows}, nil
+}
+
+type SearchTermsIn struct {
+	Site  string `json:"site" jsonschema:"site id, name or domain"`
+	Range string `json:"range,omitempty" jsonschema:"24h, 7d, 30d or 90d; default 30d. Search Console trails by two to three days so 24h is usually empty"`
+	Limit int    `json:"limit,omitempty" jsonschema:"1-500, default 100"`
+}
+
+type SearchTermsOut struct {
+	Site      string               `json:"site"`
+	Range     string               `json:"range"`
+	Connected bool                 `json:"connected" jsonschema:"false when the site has no Search Console connection"`
+	Rows      []searchconsole.Term `json:"rows" jsonschema:"most clicked first; position is the impression-weighted average ranking"`
+}
+
+func (t *tools) searchTerms(ctx context.Context, _ *sdk.CallToolRequest, in SearchTermsIn) (*sdk.CallToolResult, SearchTermsOut, error) {
+	s, err := t.resolve(ctx, in.Site)
+	if err != nil {
+		return nil, SearchTermsOut{}, err
+	}
+	if in.Range == "" {
+		in.Range = "30d"
+	}
+	rng, err := normRange(in.Range)
+	if err != nil {
+		return nil, SearchTermsOut{}, err
+	}
+	limit := in.Limit
+	if limit <= 0 {
+		limit = 100
+	}
+	if limit > 500 {
+		limit = 500
+	}
+	out := SearchTermsOut{Site: s.Name, Range: rng, Rows: []searchconsole.Term{}}
+	if t.st.Search == nil {
+		return nil, out, nil
+	}
+	if _, err := t.st.Search.Get(ctx, s.ID); err != nil {
+		if errors.Is(err, searchconsole.ErrNotConnected) {
+			return nil, out, nil
+		}
+		return nil, out, err
+	}
+	out.Connected = true
+	from, to, _ := stats.Window(rng, t.st.Now())
+	rows, err := t.st.Search.Terms(ctx, s.ID, from.Format("2006-01-02"), to.Add(-time.Second).Format("2006-01-02"), limit)
+	if err != nil {
+		return nil, out, err
+	}
+	out.Rows = rows
+	return nil, out, nil
 }
 
 func boolPtr(b bool) *bool { return &b }

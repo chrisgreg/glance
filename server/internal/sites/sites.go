@@ -263,7 +263,8 @@ func (s *Store) Delete(ctx context.Context, id string) error {
 	if n, _ := res.RowsAffected(); n == 0 {
 		return ErrNotFound
 	}
-	for _, q := range []string{`DELETE FROM events WHERE site_id = ?`, `DELETE FROM hourly_stats WHERE site_id = ?`, `DELETE FROM daily_stats WHERE site_id = ?`} {
+	for _, q := range []string{`DELETE FROM events WHERE site_id = ?`, `DELETE FROM hourly_stats WHERE site_id = ?`, `DELETE FROM daily_stats WHERE site_id = ?`,
+		`DELETE FROM google_connections WHERE site_id = ?`, `DELETE FROM search_terms WHERE site_id = ?`} {
 		if _, err := tx.ExecContext(ctx, q, id); err != nil {
 			return err
 		}

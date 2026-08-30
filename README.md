@@ -175,8 +175,22 @@ All endpoints are under `/api/v1`. Errors are JSON: `{"error": "code", "message"
 | `GLANCE_ADMIN_USER` | | Dashboard username; set together with the password |
 | `GLANCE_ADMIN_PASSWORD` | | 8+ characters. Unset = no login |
 | `GLANCE_MCP_TOKEN` | | Optional fixed bearer token for the [MCP endpoint](#mcp-for-ai-agents); 16+ characters. Tokens minted in Settings work without it |
+| `GLANCE_GOOGLE_CLIENT_ID` | | OAuth client for [Google Search Console](#google-search-terms); set together with the secret |
+| `GLANCE_GOOGLE_CLIENT_SECRET` | | |
 
 Glance reads the client IP from `X-Forwarded-For` (or `X-Real-IP`), which Traefik and most proxies set. The IP is only ever hashed.
+
+## Google search terms
+
+Google strips the query from the referrer, so the only way to see which searches bring people in is the Search Console API. Each site's settings panel has a **Connect Google Search Console** button once an OAuth client is configured. Glance pulls the last 16 months on connect and refreshes once a day; the dashboard gets a **Search terms** card and the MCP server a `search_terms` tool. Google's data trails by two to three days.
+
+1. In [Google Cloud](https://console.cloud.google.com/apis/credentials), create a project, enable the **Google Search Console API**, and create an **OAuth client ID** of type *Web application*.
+2. Add the redirect URI shown in the site's settings panel, `https://glance.example.com/api/v1/google/callback`. It must match exactly.
+3. Set `GLANCE_GOOGLE_CLIENT_ID` and `GLANCE_GOOGLE_CLIENT_SECRET` and restart.
+4. On the OAuth consent screen, add your Google account as a test user, or publish the app. While the app is in *Testing*, Google expires the grant after seven days and Glance shows **Reconnect Google**; publishing removes that limit (no verification needed for your own use, you just click through an "unverified app" warning once).
+5. Open a site, **Settings**, **Connect Google Search Console**. Glance picks the property matching the domain, preferring a domain property (`sc-domain:`) over URL-prefix ones, and asks you to choose if none matches.
+
+Only the `webmasters.readonly` scope is requested. The refresh token is stored in the SQLite file alongside everything else; disconnecting revokes it with Google and deletes the stored terms.
 
 ## Deploying with Dokploy (or any compose host)
 

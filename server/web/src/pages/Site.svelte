@@ -1,6 +1,6 @@
 <script lang="ts">
   // Per-site dashboard: metrics, chart, breakdowns, world map, settings.
-  import { api, RANGES, refIconURL, siteIconURL, type Dim, type Live, type Range, type Row, type Site, type Summary } from '../lib/api'
+  import { api, googleConnectURL, RANGES, refIconURL, siteIconURL, type Dim, type GoogleStatus, type Live, type Range, type Row, type SearchTerm, type Site, type Summary } from '../lib/api'
   import { countryName, flag, fmtDelta, fmtNum, fmtRatio } from '../lib/format'
   import { pageIn, panel } from '../lib/motion'
   import Icon from '../lib/ui/Icon.svelte'
@@ -27,6 +27,78 @@
   let LiveMap = $state<typeof import('../lib/map/LiveMap.svelte').default | null>(null)
   let mapView = $state<'live' | 'range'>('live')
   let liveData = $state<Live | null>(null)
+
+  // Google Search Console: connection status for the settings panel and
+  // the search terms it feeds. Google's data trails by two to three days.
+  let google = $state<GoogleStatus | null>(null)
+  let googleRedirect = $state('')
+  let googleBusy = $state(false)
+  let googleNotice = $state('')
+  let terms = $state<SearchTerm[]>([])
+
+  async function loadGoogle() {
+    try {
+      const r = await api.google(id)
+      google = r.status
+      googleRedirect = r.redirect_uri
+    } catch (e: any) {
+      google = null
+    }
+  }
+  async function loadTerms() {
+    if (!google?.connected) {
+      terms = []
+      return
+    }
+    try {
+      terms = (await api.searchTerms(id, range)).rows
+    } catch {
+      terms = []
+    }
+  }
+  async function googleAction(run: () => Promise<unknown>) {
+    googleBusy = true
+    try {
+      await run()
+      await loadGoogle()
+      await loadTerms()
+    } catch (e: any) {
+      error = e.message
+    } finally {
+      googleBusy = false
+    }
+  }
+  function disconnectGoogle() {
+    if (!confirm('Disconnect Google Search Console? Stored search terms for this site are deleted.')) return
+    googleAction(() => api.googleDisconnect(id))
+  }
+  // The callback lands here with ?google=connected or ?google_error=…
+  $effect(() => {
+    const params = new URLSearchParams(location.search)
+    const err = params.get('google_error')
+    if (params.get('google') === 'connected') {
+      googleNotice = 'Google Search Console connected. The first pull can take a minute.'
+      settingsOpen = true
+    } else if (err) {
+      error = 'Google: ' + err
+      settingsOpen = true
+    }
+    if (params.has('google') || params.has('google_error')) history.replaceState(null, '', location.pathname)
+    loadGoogle()
+  })
+  $effect(() => {
+    range
+    google?.connected
+    loadTerms()
+  })
+  const termRows = $derived(
+    terms.map((t) => ({
+      key: t.query,
+      label: t.query,
+      value: t.clicks,
+      title: `${fmtNum(t.impressions)} impressions · position ${t.position.toFixed(1)}`,
+    })),
+  )
 
   async function load() {
     try {
@@ -88,20 +160,24 @@
   const events = $derived(rowsFor('event'))
 
   // "View all" modal.
-  let modal = $state<Dim | null>(null)
+  let modal = $state<Dim | 'search' | null>(null)
   let modalRows = $state<BarRow[] | null>(null)
   let filter = $state('')
-  function openAll(dim: Dim) {
+  function openAll(dim: Dim | 'search') {
     modal = dim
     modalRows = null
     filter = ''
+    if (dim === 'search') {
+      modalRows = termRows
+      return
+    }
     api
       .breakdown(id, dim, range)
       .then((r) => (modalRows = toRows(dim, r.rows)))
       .catch((e: any) => (error = e.message))
   }
   const filtered = $derived((modalRows ?? []).filter((r) => !filter || r.label.toLowerCase().includes(filter.toLowerCase())))
-  const more = (dim: Dim) => () => openAll(dim)
+  const more = (dim: Dim | 'search') => () => openAll(dim)
   const topCountry = $derived(stats?.breakdowns.country?.[0]?.key ?? '')
 
   const snippet = $derived(site ? `<script defer src="${location.origin}/glance.js" data-site="${site.id}"><\/script>` : '')
@@ -159,6 +235,50 @@
         <div class="text"><div class="label">Favicon</div><div class="hint">Fetched from your site by Glance, never from a third party</div></div>
         <Button variant="secondary" size="sm" onclick={() => api.refreshFavicon(id).then((s) => (site = { ...site!, ...s }))}>Refresh</Button>
       </div>
+      {#if google}
+        <div class="setting google">
+          <div class="text">
+            <div class="label">Google Search Console</div>
+            {#if !google.configured}
+              <div class="hint">Shows the search terms Google sends here. Create an OAuth client in Google Cloud, add <code>{googleRedirect}</code> as a redirect URI, then set <code>GLANCE_GOOGLE_CLIENT_ID</code> and <code>GLANCE_GOOGLE_CLIENT_SECRET</code>.</div>
+            {:else if google.connected && google.connection}
+              <div class="hint">
+                {google.connection.email || 'Connected'}{#if google.connection.property} · {google.connection.property}{/if}
+                {#if google.needs_reconnect}
+                  · <span class="bad">access expired, connect again</span>
+                {:else if google.connection.sync_error}
+                  · <span class="bad">{google.connection.sync_error}</span>
+                {:else if google.latest_day}
+                  · data to {google.latest_day}
+                {:else if google.connection.property}
+                  · first pull pending
+                {/if}
+              </div>
+              {#if !google.connection.property && google.available_properties?.length}
+                <div class="hint">No property matches {site.domain}. Pick one:</div>
+                <div class="props">
+                  {#each google.available_properties as p (p)}
+                    <button type="button" class="prop" disabled={googleBusy} onclick={() => googleAction(() => api.googleSetProperty(id, p))}>{p}</button>
+                  {/each}
+                </div>
+              {:else if !google.connection.property}
+                <div class="hint bad">This Google account has no Search Console property for {site.domain}. Verify the site in Search Console, then connect again.</div>
+              {/if}
+            {:else}
+              <div class="hint">Shows the search terms Google sends here. Read-only access; Glance pulls once a day.</div>
+            {/if}
+            {#if googleNotice}<div class="hint ok">{googleNotice}</div>{/if}
+          </div>
+          <div class="google-actions">
+            {#if google.connected && !google.needs_reconnect}
+              <Button variant="secondary" size="sm" disabled={googleBusy || !google.connection?.property} onclick={() => googleAction(() => api.googleSync(id))}>{googleBusy ? 'Working' : 'Sync now'}</Button>
+              <Button variant="secondary" size="sm" disabled={googleBusy} onclick={disconnectGoogle}>Disconnect</Button>
+            {:else if google.configured}
+              <a class="btn" href={googleConnectURL(id)}>{google.needs_reconnect ? 'Reconnect Google' : 'Connect Google Search Console'}</a>
+            {/if}
+          </div>
+        </div>
+      {/if}
     </div>
   {/if}
 
@@ -178,6 +298,9 @@
       <div class="grid">
         <Realtime minutes={liveData?.minutes ?? Array(30).fill(0)} total={liveData?.total_30m ?? 0} onmore={() => { mapView = 'live'; document.querySelector('.map-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }} />
         <BarList title="Events" rows={events} empty="Call glance('name') from your site" onmore={more('event')} />
+        {#if google?.connected}
+          <BarList title="Search terms" rows={termRows} empty={range === '24h' ? 'Google reports search terms two to three days late' : 'No Google search terms for this range yet'} onmore={more('search')} />
+        {/if}
         <BarList title="Pages" rows={pages} empty="No page views yet" onmore={more('page')} />
         <BarList
           title="Sources"
@@ -238,7 +361,7 @@
 {/if}
 
 {#if modal}
-  <Modal title={DIM_TITLE[modal]} subtitle="{site?.name} · {range} · {modalRows ? `${modalRows.length} ${modal === 'event' ? 'events' : 'rows'}` : 'loading'}" onclose={() => (modal = null)}>
+  <Modal title={modal === 'search' ? 'Search terms' : DIM_TITLE[modal]} subtitle="{site?.name} · {range} · {modalRows ? `${modalRows.length} ${modal === 'event' ? 'events' : modal === 'search' ? 'terms' : 'rows'}` : 'loading'}" onclose={() => (modal = null)}>
     <div class="modal-search"><Input bind:value={filter} placeholder="Filter" aria-label="Filter rows" /></div>
     {#if modalRows}
       <BarList bare rows={filtered} empty="No matches">
@@ -273,6 +396,17 @@
   .snippet { font: var(--up-type-code); color: var(--up-text-on-dark); word-break: break-all; }
   .copy { background: none; border: none; padding: 2px 0; cursor: pointer; font: var(--up-type-small); color: var(--up-operational-strong); flex-shrink: 0; }
   .copy:hover { color: var(--up-text-on-dark); }
+  .google { align-items: flex-start; }
+  .google .text { gap: 6px; }
+  .hint code { font: var(--up-type-code); user-select: all; }
+  .hint.ok { color: var(--up-operational-strong); }
+  .google-actions { display: flex; gap: 8px; flex-shrink: 0; }
+  .btn { font: var(--up-type-ui); color: var(--up-ink); background: var(--up-bg); box-shadow: inset 0 0 0 1px var(--up-border-control); border-radius: var(--up-radius-control); height: 30px; padding: 0 12px; display: inline-flex; align-items: center; white-space: nowrap; }
+  .btn:hover { background: var(--up-bg-hover); color: var(--up-ink); }
+  .props { display: flex; flex-wrap: wrap; gap: 6px; }
+  .prop { font: var(--up-type-code); color: var(--up-ink); background: var(--up-bg-hover); border: none; border-radius: var(--up-radius-control); padding: 4px 8px; cursor: pointer; }
+  .prop:hover { box-shadow: inset 0 0 0 1px var(--up-border-control); }
+  .prop:disabled { opacity: 0.5; cursor: default; }
 
   .strip { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; }
   .metrics { display: flex; gap: 36px; }
