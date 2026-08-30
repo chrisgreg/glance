@@ -1,124 +1,209 @@
-# Glance
+<p align="center">
+  <img src="docs/glance.svg" width="160" alt="Glance logo" />
 
-A tiny, self-hosted web analytics service in the same family as Boop and UP. Visitors, page views, top pages, referrers, countries, devices and simple custom events, at a glance. Nothing heavier than that.
+  <h1 align="center">Glance</h1>
 
-One Go binary, one SQLite file, one Docker container. Sites add a cookieless snippet under 1 KB. No sessions, funnels, cohorts, heatmaps or replay, and no third-party services at all: favicons are fetched by Glance itself and the world map ships its own outlines.
+<p align="center">
+  <img src="https://img.shields.io/github/go-mod/go-version/chrisgreg/glance?filename=server%2Fgo.mod" alt="Go version" />
+  <img src="https://img.shields.io/github/license/chrisgreg/glance" alt="License" />
+</p>
+
+A tiny, self-hosted web analytics service. The useful stuff at a glance: visitors, page views, top pages, referrers, countries, devices and simple custom events. Not a product analytics platform.
+
+One Go binary, one SQLite file, one Docker container. Sites add a cookieless snippet under 1 KB. No sessions, funnels, cohorts, heatmaps or replay. No third-party services at runtime: favicons are fetched by Glance itself, the world map ships its own outlines, and brand icons are bundled.
+
+</p>
+
+```html
+<script defer src="https://glance.example.com/glance.js" data-site="site_…"></script>
+```
+
+## Architecture
+
+The snippet posts one small JSON body per page view (site id, URL, referrer, screen width, time zone) with `sendBeacon`, and again on `pushState` and `popstate` for single-page apps. The Go server validates the host against the site's domain, drops bots, derives browser, OS, device, country, region and campaign tags, and pushes the event onto an in-memory queue. The request never touches the database. A writer goroutine commits the queue every second or every 200 events in one transaction. Every five minutes today's and yesterday's rollups are rebuilt from raw events; the dashboard reads only rollups, so it stays fast however much traffic you keep. The embedded Svelte UI lists your sites and, per site, shows a chart, tabbed breakdown cards, a live 3D globe and a range map.
 
 ## What is in the box
 
 | Part | Where |
 | --- | --- |
-| Go server (collect endpoint, batched writer, rollups, favicons, embedded web UI) | `server/` |
+| Go server (collect endpoint, batched writer, rollups, favicons, MCP, embedded web UI) | `server/` |
 | Web UI (Svelte 5, LayerChart, MapLibre, built into the binary) | `server/web/` |
-
-- `/` lists your websites with a sparkline and this week's visitors. Add sites and copy the tracking code there.
-- `/s/{id}` is the dashboard: visitors, page views and views per visitor with deltas, a 24h/7d/30d/90d chart, a "people in the last 30 minutes" strip, tabbed cards (Pages; Sources as referrer, `utm_source`/`?ref=` or `utm_campaign`; Locations as countries or regions; Devices as browsers, OS or device class; Events), each expandable to the full list, plus a live 3D globe with arcs from each visiting country to your home country and a range map.
-- `/glance.js` is the snippet, `/api/v1/collect` the endpoint it posts to. Both are public; everything else is behind the login.
+| Tracking snippet (served at `/glance.js`) | `server/internal/api/glance.js` |
 
 ## Quick start (Docker)
 
 ```bash
+git clone https://github.com/chrisgreg/glance && cd glance
 cp .env.example .env          # set GLANCE_ADMIN_USER and GLANCE_ADMIN_PASSWORD
 mkdir -p data && chown 1000:1000 data   # Linux hosts only; the container runs as uid 1000
 docker compose up -d --build
 open http://localhost:8082
 ```
 
-Add a website, then paste the snippet before `</head>`:
+Add a website, click **Tracking code**, and paste the snippet before `</head>`. Data appears after the next rollup (every five minutes).
 
-```html
-<script defer src="https://glance.example.com/glance.js" data-site="site_…"></script>
+Data lives in `./data/glance.db`. Back up by copying that file (use `sqlite3 data/glance.db ".backup backup.db"` for a consistent copy while running).
+
+## Quick start (binary)
+
+```bash
+make web                       # builds the Svelte UI into the Go embed directory
+make build                     # bin/glance with the UI embedded
+GLANCE_DATABASE_PATH=./glance.db ./bin/glance     # listens on :8080
 ```
 
-Testing locally: pages served from `localhost`, `127.0.0.1`, `*.localhost`, `*.local`, `*.test` or a private LAN address are accepted for every site, so you can try the snippet on a dev server before deploying. Anything else must match the site's domain or a subdomain of it. Run with `GLANCE_LOG_LEVEL=debug` to see why an event was dropped.
+Configuration is the same set of environment variables as Docker (see [Configuration](#configuration)). `GLANCE_DATABASE_PATH` defaults to `/data/glance.db`, so set it to somewhere writable.
 
-Custom events from your page:
+## Track a site
+
+Paste the snippet, then visit the site. That is the whole integration.
+
+**Custom events** from your page:
 
 ```js
 glance('signup')
+glance('download', { plan: 'pro' })   // properties are accepted and ignored for now
 ```
 
-Data lives in `./data/glance.db`. Back up by copying that file. For Dokploy or any Traefik-fronted host use `docker-compose.dokploy.yml` and set the environment variables in the host's UI.
+**Single-page apps** are handled: the snippet re-sends on `pushState` and `popstate`.
 
-## Configuration
+**Testing locally.** Pages served from `localhost`, `127.0.0.1`, `*.localhost`, `*.local`, `*.test` or a private LAN address are accepted for every site, so you can try the snippet on a dev server before deploying. Anything else must match the site's domain or a subdomain of it. Run with `GLANCE_LOG_LEVEL=debug` to see why an event was dropped.
 
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `GLANCE_ADMIN_USER` / `GLANCE_ADMIN_PASSWORD` | unset | Login for the dashboard and admin API. Both or neither; password 8+ characters. Sessions survive restarts and are invalidated when the password changes. |
-| `GLANCE_PORT` | `8080` | Listen port. |
-| `GLANCE_DATABASE_PATH` | `/data/glance.db` | SQLite file. |
-| `GLANCE_RETENTION_DAYS` | `7` | Days of raw events to keep, minimum 2. Hourly and daily rollups are kept forever. |
-| `GLANCE_MCP_TOKEN` | unset | Optional fixed bearer token for the MCP endpoint, 16+ characters. Tokens minted in Settings and the admin login work there too. |
-| `GLANCE_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error`. JSON logs on stdout. |
+**What is dropped.** Known bot user agents (anything with `bot`, `crawl`, `spider`, `headless`, `curl`, `wget` and friends), browsers with `navigator.webdriver` set, events whose page host does not match the site, and bodies over 4 KB. The endpoint always answers 202 so it cannot be used to probe which site ids exist.
+
+## Dashboard
+
+The index lists every site with its favicon, a 14-day sparkline and this week's visitors against last week's. Drag the grip to reorder.
+
+Per site:
+
+- **Visitors, page views, views per visitor** with the change versus the previous equal window, over 24h, 7d, 30d or 90d.
+- **Chart**: hourly for 24h and 7d, daily for 30d and 90d, with the dark tooltip on hover.
+- **People in the last 30 minutes** with a per-minute strip.
+- **Tabbed cards**: Pages; Sources as Referrer, Source (`utm_source`, falling back to `?ref=` and `?source=`) or Campaign (`utm_campaign`); Locations as Countries or Regions; Devices as Browsers, OS or Devices; Events. The expand icon beside a title opens the full list with a filter box. Bars grow in when a tab changes.
+- **Live**: a 3D globe of visitors from the last five minutes, dots sized by count, arcs flowing from each country to your home country, refreshed every five seconds. Switch to the range map for the whole window.
+- **Settings** per site: name, domain, home country, refetch favicon.
 
 ## How it works
 
-**Collecting.** The snippet sends one small JSON body per page view (site id, URL, referrer, screen width, time zone) with `sendBeacon`, and again on `pushState` and `popstate` for single-page apps. The server validates the URL host against the site's domain, drops known bots, derives everything it needs, and pushes the event onto an in-memory queue. The request never touches the database. A writer goroutine commits the queue every second or every 200 events in one transaction.
+**Visitors.** There are no cookies and no stored IPs. A visitor is `sha256(daily salt + site + IP + user agent)`, truncated to 16 hex characters. The salt rotates every UTC day and is persisted, so a restart does not split a day and nobody can be followed from one day to the next. A day's visitor count is exact; multi-day totals are the sum of daily uniques, the same convention Plausible uses.
 
-**Visitors.** There are no cookies and no stored IPs. A visitor is `sha256(daily salt + site + IP + user agent)`, truncated. The salt rotates every UTC day, so a visitor cannot be followed from one day to the next. A day's visitor count is exact; multi-day totals are the sum of daily uniques, the same convention Plausible uses.
+**Country and region.** A proxy country header (`CF-IPCountry`, `X-Vercel-IP-Country`, `X-Country-Code`, `X-Geo-Country`, `CloudFront-Viewer-Country`) is used when present. Otherwise the visitor's browser time zone is mapped to a country with a table generated from the IANA zone file. "Regions" are the city part of that time zone (`Europe/London` → London), the only sub-country signal available without a GeoIP database, so there are no cities.
 
-**Country.** A proxy country header (`CF-IPCountry`, `X-Vercel-IP-Country`, `X-Country-Code`) is used when present. Otherwise the visitor's browser time zone is mapped to a country with an embedded table. That is approximate, but it needs no GeoIP database.
+**Browser, OS, device.** A small ordered user-agent matcher (Edge before Chrome, Chrome before Safari, `CriOS` and `FxiOS` on iOS) plus the screen width the snippet sends. No external database.
 
-**Regions and campaigns.** "Regions" are the city part of the visitor's time zone ("Europe/London" → London), the only sub-country signal available without GeoIP, so there are no cities. Sources and campaigns come from `utm_source` (falling back to `?ref=` or `?source=`) and `utm_campaign` on the landing URL.
+**Referrers.** Host only, same-site traffic counts as direct, and common hosts are aliased (`t.co` → `x.com`, `www.google.com` → `google.com`, and so on).
 
-**Rollups.** Every five minutes today's and yesterday's rollups are rebuilt from raw events: pageviews and visitors per hour, and per day for each dimension (page, referrer, country, region, device, browser, OS, event, utm_source, utm_campaign, capped at 500 keys with the rest folded into "Other"). The dashboard reads only rollups, so it stays fast however much traffic you have. Raw events are pruned after `GLANCE_RETENTION_DAYS`.
+**Rollups.** `hourly_stats` holds page views and distinct visitors per hour. `daily_stats` holds, per day, a total plus every dimension (page, referrer, country, region, device, browser, OS, event, `utm_source`, `utm_campaign`), capped at 500 keys per dimension per day with the rest folded into "Other". Raw events are pruned after the retention period; two days is the floor because today and yesterday are rebuilt from them.
 
-**Favicons.** Glance fetches your site's icon from the site itself (declared `<link rel="icon">`, then `/favicon.ico`) and caches referrer icons the same way, so the dashboard makes no requests to Google or any CDN. Every fetch goes through a guard that refuses private, loopback and link-local addresses, including on redirects.
+**Favicons.** Glance fetches your site's icon from the site itself (declared `<link rel="icon">`, then `/favicon.ico`) and caches referrer icons the same way, so the dashboard never asks Google or a CDN. Every fetch goes through a guard that refuses loopback, private, link-local and carrier-grade NAT addresses, including after redirects, and dials the checked IP rather than the name.
 
-**Map.** Country outlines come from Natural Earth (public domain) bundled into the UI. No tile server, no attribution, no runtime network. Arcs run from each country's centroid to the site's home country (set it in Settings; blank uses your top country). Flags are emoji; on systems that do not render them the country name still shows.
+**Map.** Country outlines come from Natural Earth (public domain) bundled into the UI, rendered by MapLibre with no tiles and no attribution requirement. Antarctica is left out and rings that cross the antimeridian are unwrapped so nothing fills the canvas. MapLibre loads in its own chunk after the dashboard's first paint.
+
+**Icons.** Browser and OS marks come from [SVGL](https://svgl.app), downloaded once and bundled. Devices are small stroke glyphs. Flags are emoji; on systems that do not render them the country name still shows.
 
 ## Settings
 
-The gear in the header opens `/settings`: overview numbers (sites, raw events, rollup rows, database size, uptime), the accent colour (four design swatches or any hex; it recolours the wordmark, links, chart, bars and map in both themes), the title, the MCP switch, API tokens, raw-event retention (2 to 90 days, unless `GLANCE_RETENTION_DAYS` pins it) and the JSON export.
+The gear in the header opens `/settings`:
 
-**API tokens** are minted on the settings page and shown once; only a hash is stored. They open the MCP endpoint and every `GET` on the admin API, and are refused for anything that writes. Revoking one takes effect immediately.
+- **Overview**: sites, raw events, rollup rows, database size, uptime.
+- **Appearance**: accent colour (four design swatches or any hex; it recolours the wordmark, links, chart, bars, arcs and map in both themes) and the title. Both are public so the login screen matches.
+- **MCP**: the endpoint URL, an on/off switch, and API tokens. Minting shows the secret once with a ready-to-paste config block; the list shows name, prefix, created and last used, with revoke.
+- **Retention**: 2 to 90 days for raw events, unless `GLANCE_RETENTION_DAYS` pins it.
+- **Data**: export download, events written since start, and the dropped count if the queue ever overflowed.
 
-## Ask an agent
+## MCP (for AI agents)
 
-Glance serves a read-only [MCP](https://modelcontextprotocol.io) endpoint at `/mcp` (Streamable HTTP). Mint a token in Settings (or set `GLANCE_MCP_TOKEN`) and point your agent at it:
+Glance speaks the [Model Context Protocol](https://modelcontextprotocol.io) at `/mcp` (Streamable HTTP), read-only. Point the agent you already use at it and ask things like *"how are my sites doing this week?"*, *"did anything spike on uini.io in the last month?"* or *"where is chrisgregori.dev's traffic coming from?"*. There is no LLM inside Glance; it serves structured numbers plus small computed signals so the agent does not have to do arithmetic on long series.
 
-```json
-{
-  "mcpServers": {
-    "glance": {
-      "url": "https://glance.example.com/mcp",
-      "headers": { "Authorization": "Bearer your-token" }
-    }
-  }
-}
+| Tool | Returns |
+| --- | --- |
+| `list_sites` | Every site with visitors this week and last, and visitors online now |
+| `overview` | Every site over a range with the change versus the previous window, a rising/falling/flat trend, spike buckets, the peak, and the top page, referrer, country and events. The right first call |
+| `site_stats` | Full detail for one site: totals, series, top 10 of every breakdown, and the same signals |
+| `breakdown` | The complete list for any dimension, up to 500 rows |
+
+Ranges are `24h`, `7d`, `30d`, `90d`; words like `week` and `month` are accepted. Sites resolve by id, name, domain or a fuzzy match.
+
+Mint a token in **Settings → MCP** (or set `GLANCE_MCP_TOKEN`) and use it as a bearer token. The admin login works there too. Turning the endpoint off in Settings returns `404 mcp_disabled` to everyone.
+
+```bash
+claude mcp add --transport http glance https://glance.example.com/mcp --header "Authorization: Bearer glance_tok_…"
 ```
 
-Tools: `list_sites`, `overview` (every site over a range with the change versus the previous window, a rising/falling/flat trend, spike buckets and the top page, referrer and country), `site_stats` (full detail and series for one site) and `breakdown` (the complete list for any dimension). Ranges are 24h, 7d, 30d and 90d. Ask things like "how are my sites doing this week", "did anything spike on uini.io in the last month" or "where is chrisgregori.dev's traffic coming from".
-
-## Icons
-
-Browser and operating system marks come from [SVGL](https://svgl.app) and are bundled at build time. Site and referrer favicons are fetched by Glance itself. Nothing on the dashboard loads from a third party at runtime.
+Any client that supports Streamable HTTP with a custom header can connect the same way.
 
 ## API
 
-Public:
+All endpoints are under `/api/v1`. Errors are JSON: `{"error": "code", "message": "..."}`.
 
-- `GET /glance.js`
-- `POST /api/v1/collect` `{s, n, u, r, w, tz}` (always 202)
-- `GET /health`
+| Method | Path | Auth | Purpose |
+| --- | --- | --- | --- |
+| GET | `/health` | none | `{"status":"ok"}` |
+| GET | `/glance.js` | none | The tracking snippet, cached for a day |
+| POST | `/api/v1/collect` | none | Ingest one event `{s, n, u, r, w, tz}`; always 202 |
+| GET | `/api/v1/theme` | none | `{accent, title}` for the UI |
+| GET/POST | `/api/v1/sites` | admin | List (with 7-day card and live count) / create `{name?, domain}` |
+| GET/PATCH/DELETE | `/api/v1/sites/:id` | admin | Manage `{name?, domain?, home_country?}` |
+| POST | `/api/v1/sites/reorder` | admin | `{ids}` in display order |
+| GET | `/api/v1/sites/:id/stats?range=` | admin | Totals, previous window, series and top-10 breakdowns |
+| GET | `/api/v1/sites/:id/breakdown?dim=&range=&limit=` | admin | Full list for one dimension, up to 500 rows |
+| GET | `/api/v1/sites/:id/live` | admin | Last 5 minutes by country, per-minute visitors for the last 30 minutes |
+| GET | `/api/v1/sites/:id/favicon` | admin | The stored site icon |
+| POST | `/api/v1/sites/:id/refresh-favicon` | admin | Refetch it now |
+| GET | `/api/v1/favicon?host=` | admin | A cached referrer icon |
+| POST | `/api/v1/rollup` | admin | Flush the queue and rebuild today's rollups now |
+| GET | `/api/v1/status` | admin | Counts, database size, uptime, ingest stats |
+| GET/PATCH | `/api/v1/settings` | admin | `accent`, `title`, `mcp_enabled`, `retention_days` |
+| GET/POST | `/api/v1/tokens` | admin | List / mint `{name}` (returns `secret` once) |
+| DELETE | `/api/v1/tokens/:id` | admin | Revoke |
+| GET | `/api/v1/export` | admin | Every site and daily rollup as one JSON file |
+| POST | `/mcp` | token or admin | Read-only [MCP](#mcp-for-ai-agents) endpoint |
 
-Admin (session cookie from `POST /api/v1/auth/login`, or HTTP Basic):
+**Admin auth.** Set `GLANCE_ADMIN_USER` and `GLANCE_ADMIN_PASSWORD` and the UI shows a sign-in screen; admin endpoints then need the session cookie it sets (`POST /api/v1/auth/login`) or HTTP Basic credentials (`curl -u user:pass …`). Sessions last 30 days, survive restarts, and are invalidated when the password changes. Leave both unset and everything is open. Only do that behind your own proxy, Tailscale or VPN.
 
-- `GET /api/v1/sites`, `POST /api/v1/sites` `{name?, domain}`, `GET|PATCH|DELETE /api/v1/sites/{id}`, `POST /api/v1/sites/reorder` `{ids}`
-- `GET /api/v1/sites/{id}/stats?range=24h|7d|30d|90d`
-- `GET /api/v1/sites/{id}/breakdown?dim=page|ref|country|region|device|browser|os|event|utm_source|utm_campaign&range=&limit=` (up to 500 rows)
-- `GET /api/v1/sites/{id}/live` (last 5 minutes by country, per-minute visitors for the last 30 minutes)
-- `POST /api/v1/rollup` (flush the queue and rebuild today's rollups now)
-- `POST|GET /mcp` (MCP, bearer `GLANCE_MCP_TOKEN` or admin login)
-- `GET /api/v1/sites/{id}/favicon`, `POST /api/v1/sites/{id}/refresh-favicon`, `GET /api/v1/favicon?host=`
-- `GET /api/v1/status`, `GET /api/v1/export` (sites plus every daily rollup as JSON)
-- `GET|PATCH /api/v1/settings` `{accent?, title?, mcp_enabled?, retention_days?}`, `GET /api/v1/theme` (public: accent and title)
-- `GET|POST /api/v1/tokens`, `DELETE /api/v1/tokens/{id}`
+**API tokens** (`glance_tok_…`) are minted in Settings, stored as hashes, and accepted for `/mcp` and every `GET` admin endpoint. They get `403 read_only` on anything that writes.
+
+## Configuration
+
+| Variable | Default | Notes |
+| --- | --- | --- |
+| `GLANCE_PORT` | `8080` | |
+| `GLANCE_DATABASE_PATH` | `/data/glance.db` | WAL mode, migrations applied on start |
+| `GLANCE_RETENTION_DAYS` | `7` | Days of raw events to keep, minimum 2. When set it pins the value; leave unset to manage it from Settings. Rollups are kept forever |
+| `GLANCE_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error`. JSON logs on stdout |
+| `GLANCE_ADMIN_USER` | | Dashboard username; set together with the password |
+| `GLANCE_ADMIN_PASSWORD` | | 8+ characters. Unset = no login |
+| `GLANCE_MCP_TOKEN` | | Optional fixed bearer token for the [MCP endpoint](#mcp-for-ai-agents); 16+ characters. Tokens minted in Settings work without it |
+
+Glance reads the client IP from `X-Forwarded-For` (or `X-Real-IP`), which Traefik and most proxies set. The IP is only ever hashed.
+
+## Deploying with Dokploy (or any compose host)
+
+Use `docker-compose.dokploy.yml`, not `docker-compose.yml`. It swaps the `./data` bind mount for a named volume (the bind mount is created root-owned on the host, and the image runs as uid 1000, so SQLite cannot write `/data/glance.db`), joins the external `dokploy-network` so Traefik can route to it, and drops the published port so the server is reachable only through your HTTPS proxy.
+
+1. New **Compose** application → your repo, compose path `docker-compose.dokploy.yml`.
+2. **Environment** tab: `GLANCE_ADMIN_USER`, `GLANCE_ADMIN_PASSWORD`, optionally `GLANCE_MCP_TOKEN`. Dokploy writes these to a `.env` beside the compose file, which is what `env_file` picks up.
+3. Add a domain with HTTPS in Dokploy pointing at port `8080`; deploy.
+4. Use that domain in the snippet: `https://glance.example.com/glance.js`.
+
+Editing the compose file in Dokploy's UI only works for **Raw** compose apps; when the source is Git, commit changes and redeploy.
+
+## Footprint
+
+The image is about 37 MB and idles at under 10 MB of memory. Storage is dominated by rollups: one row per site per day per breakdown key, so a site with a hundred pages and a dozen referrers adds a few hundred rows a day. Raw events are the only thing that grows with traffic, and they are pruned.
 
 ## Development
 
 ```bash
-make web && make run     # build the UI, then serve on :8080 with ./data/glance.db
-make dev                 # Vite on :5173, proxying /api to :8080
-make test                # go vet + go test, svelte-check + vitest
+cd server && GLANCE_DATABASE_PATH=./data/glance.db go run ./cmd/glance   # API on :8080
+cd server/web && npm install && npm run dev                               # UI on :5173, proxies /api
+make test                                                                 # Go + web tests
+make build                                                                # bin/glance with the UI embedded
 ```
+
+Requires Go 1.27 and Node 24 (see `.tool-versions`). The SQLite driver is pure Go, so `CGO_ENABLED=0` builds work everywhere. The Go tests cover ingest through rollup to stats with a fixed clock, day-scoped hashing, the user-agent table, timezone mapping, the SSRF guard, favicon parsing, the MCP tools over a real client, tokens and settings.
+
+## Licence
+
+MIT.
