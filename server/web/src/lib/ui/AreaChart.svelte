@@ -39,20 +39,18 @@
   // single sale never squashes the traffic line.
   const hasRevenue = $derived(revenue.length === n && revenue.some((v) => v > 0))
   const revMax = $derived(Math.max(1, ...revenue))
-  const barW = $derived(n <= 1 ? width : Math.max(2, (width / (n - 1)) * 0.6))
-  const revH = (v: number) => (v / revMax) * (H - PAD_TOP - 1) * 0.85
+  const ry = (v: number) => H - 1 - (v / revMax) * (H - PAD_TOP - 1) * 0.85
   const x = (i: number) => (n <= 1 ? 0 : (i / (n - 1)) * width)
   const y = (v: number) => H - 1 - (v / max) * (H - PAD_TOP - 1)
 
   // Uniform cubic B-spline (the shape of d3's curveBasis): soft bells with
   // gentle shoulders, never overshooting below the baseline. The first and
   // last points are pinned so the ends meet the data.
-  const line = $derived.by(() => {
-    if (n === 0) return ''
-    if (n === 1) return `M 0 ${y(series[0].visitors)} L ${width} ${y(series[0].visitors)}`
-    const pts = series.map((p, i) => [x(i), y(p.visitors)] as [number, number])
+  function spline(pts: [number, number][]): string {
+    if (pts.length === 0) return ''
+    if (pts.length === 1) return `M 0 ${pts[0][1]} L ${width} ${pts[0][1]}`
     // Duplicate the ends so the spline starts and finishes on the real values.
-    const P = [pts[0], pts[0], ...pts, pts[n - 1], pts[n - 1]]
+    const P = [pts[0], pts[0], ...pts, pts[pts.length - 1], pts[pts.length - 1]]
     let d = `M ${pts[0][0].toFixed(1)} ${pts[0][1].toFixed(1)}`
     for (let i = 1; i < P.length - 2; i++) {
       const [p0, p1, p2, p3] = [P[i - 1], P[i], P[i + 1], P[i + 2]]
@@ -66,8 +64,13 @@
       d += ` C ${c1x.toFixed(1)} ${c1y.toFixed(1)} ${c2x.toFixed(1)} ${c2y.toFixed(1)} ${ex.toFixed(1)} ${ey.toFixed(1)}`
     }
     return d
-  })
+  }
+  const line = $derived(spline(series.map((p, i) => [x(i), y(p.visitors)])))
   const area = $derived(line ? `${line} L ${width} ${H} L 0 ${H} Z` : '')
+  // Revenue is a second spline on its own scale, so one sale never
+  // squashes the traffic line.
+  const revLine = $derived(hasRevenue ? spline(revenue.map((v, i) => [x(i), ry(v)])) : '')
+  const revArea = $derived(revLine ? `${revLine} L ${width} ${H} L 0 ${H} Z` : '')
 
   // Axis dots: every bucket for ≤ 48 points, otherwise thinned to ~24.
   const step = $derived(Math.max(1, Math.round(n / 24)))
@@ -105,14 +108,18 @@
           <stop offset="0%" stop-color="var(--up-accent-line)" stop-opacity="0.22" />
           <stop offset="100%" stop-color="var(--up-accent-line)" stop-opacity="0" />
         </linearGradient>
+        <linearGradient id="revfill-{uid}" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="var(--up-revenue)" stop-opacity="0.14" />
+          <stop offset="100%" stop-color="var(--up-revenue)" stop-opacity="0" />
+        </linearGradient>
         <clipPath id="future-{uid}"><rect x={hover === null ? 0 : hx} y="0" width={width} height={H} /></clipPath>
       </defs>
       {#if hasRevenue}
-        {#each revenue as v, i (i)}
-          {#if v > 0}
-            <rect x={x(i) - barW / 2} y={H - 1 - revH(v)} width={barW} height={revH(v)} rx="2" fill="var(--up-revenue)" opacity={hover === null || hover === i ? 0.55 : 0.3} />
-          {/if}
-        {/each}
+        <path d={revArea} fill="url(#revfill-{uid})" />
+        <path d={revLine} fill="none" stroke="var(--up-revenue)" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" opacity={hover === null ? 0.9 : 0.35} />
+        {#if hover !== null}
+          <path d={revLine} fill="none" stroke="var(--up-revenue)" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" clip-path="url(#future-{uid})" />
+        {/if}
       {/if}
       {#each markerIdx as m (m.t)}
         <line x1={x(m.i)} x2={x(m.i)} y1={PAD_TOP - 14} y2={y(series[m.i].visitors)} stroke="var(--up-border-control)" stroke-width="1" stroke-dasharray="2 4" />

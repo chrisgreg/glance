@@ -415,9 +415,11 @@
       <MetricStat label="Page views" value={fmtNum(stats.totals.pageviews)} delta={fmtDelta(stats.totals.pageviews, stats.previous.pageviews)} />
       <MetricStat label="Views / visitor" value={fmtRatio(stats.totals.pageviews, stats.totals.visitors)} />
       {#if revenue}
-        <MetricStat label="Revenue" value={money(revenue.totals.revenue)} delta={fmtDelta(revenue.totals.revenue, revenue.previous.revenue)} />
-        <MetricStat label="Orders" value={fmtNum(revenue.totals.orders)} delta={fmtDelta(revenue.totals.orders, revenue.previous.orders)} />
-        <MetricStat label="Revenue / visitor" value={stats.totals.visitors ? money(Math.round(revenue.totals.revenue / stats.totals.visitors)) : money(0)} />
+        <div class="group">
+          <MetricStat label="Revenue" value={money(revenue.totals.revenue)} delta={fmtDelta(revenue.totals.revenue, revenue.previous.revenue)} />
+          <MetricStat label="Orders" value={fmtNum(revenue.totals.orders)} delta={fmtDelta(revenue.totals.orders, revenue.previous.orders)} />
+          <MetricStat label="Per visitor" value={stats.totals.visitors ? money(Math.round(revenue.totals.revenue / stats.totals.visitors)) : money(0)} />
+        </div>
       {/if}
     </div>
     <div class="ranges"><Segment options={RANGES.map((r) => ({ value: r, label: r }))} value={range} gap={16} onchange={(r) => (range = r)} /></div>
@@ -557,9 +559,10 @@
   .prop:hover { box-shadow: inset 0 0 0 1px var(--up-border-control); }
   .prop:disabled { opacity: 0.5; cursor: default; }
 
-  .strip { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; }
-  .metrics { display: flex; gap: 36px; }
-  .ranges { padding-bottom: 4px; }
+  .strip { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; }
+  .metrics { display: flex; gap: 36px; flex-wrap: wrap; row-gap: 20px; }
+  .group { display: flex; gap: 36px; padding-left: 36px; border-left: 1px solid var(--up-border-hairline); }
+  .ranges { padding-top: 4px; flex-shrink: 0; }
   .stack { display: flex; flex-direction: column; gap: 36px; }
   .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
   .wide { grid-column: 1 / -1; }
@@ -573,7 +576,8 @@
   @media (max-width: 600px) {
     .grid { grid-template-columns: 1fr; }
     .strip { flex-direction: column; align-items: flex-start; }
-    .metrics { gap: 24px; flex-wrap: wrap; }
+    .metrics { gap: 24px; }
+    .group { gap: 24px; padding-left: 0; border-left: none; width: 100%; }
     .setting { flex-direction: column; align-items: flex-start; gap: 8px; }
     .ctl { width: 100%; }
   }

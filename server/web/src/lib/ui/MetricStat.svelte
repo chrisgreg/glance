@@ -14,7 +14,7 @@
 
 <style>
   .stat { display: flex; flex-direction: column; gap: 3px; }
-  .label { font: var(--up-type-meta); color: var(--up-text-muted); }
+  .label { font: var(--up-type-meta); color: var(--up-text-muted); white-space: nowrap; }
   .row { display: flex; align-items: baseline; gap: 8px; }
   .value { font: var(--up-type-metric); letter-spacing: -0.01em; }
   .delta { font: var(--up-type-small); color: var(--up-accent); }
