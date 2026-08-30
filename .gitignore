@@ -1,0 +1,11 @@
+node_modules/
+server/web/dist/
+server/internal/web/dist/*
+!server/internal/web/dist/.gitkeep
+data/
+*.db
+*.db-wal
+*.db-shm
+.env
+.DS_Store
+bin/

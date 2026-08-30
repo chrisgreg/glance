@@ -1,0 +1,296 @@
+<script lang="ts">
+  // Per-site dashboard: metrics, chart, breakdowns, world map, settings.
+  import { api, RANGES, refIconURL, siteIconURL, type Dim, type Live, type Range, type Row, type Site, type Summary } from '../lib/api'
+  import { countryName, flag, fmtDelta, fmtNum, fmtRatio } from '../lib/format'
+  import { pageIn, panel } from '../lib/motion'
+  import Icon from '../lib/ui/Icon.svelte'
+  import Segment from '../lib/ui/Segment.svelte'
+  import MetricStat from '../lib/ui/MetricStat.svelte'
+  import BarList, { type BarRow } from '../lib/ui/BarList.svelte'
+  import AreaChart from '../lib/ui/AreaChart.svelte'
+  import Input from '../lib/ui/Input.svelte'
+  import Button from '../lib/ui/Button.svelte'
+  import Modal from '../lib/ui/Modal.svelte'
+  import BrandIcon from '../lib/ui/BrandIcon.svelte'
+  import Realtime from '../lib/ui/Realtime.svelte'
+
+  let { id }: { id: string } = $props()
+  let site = $state<Site | null>(null)
+  let stats = $state<Summary | null>(null)
+  let live = $state(0)
+  let range = $state<Range>('7d')
+  let error = $state('')
+  let settingsOpen = $state(false)
+  let copied = $state(false)
+  // The map pulls in MapLibre; load it only once the dashboard is up.
+  let WorldMap = $state<typeof import('../lib/map/WorldMap.svelte').default | null>(null)
+  let LiveMap = $state<typeof import('../lib/map/LiveMap.svelte').default | null>(null)
+  let mapView = $state<'live' | 'range'>('live')
+  let liveData = $state<Live | null>(null)
+
+  async function load() {
+    try {
+      const r = await api.stats(id, range)
+      site = r.site
+      stats = r.stats
+      live = r.live
+      error = ''
+      document.title = `${r.site.name} · Glance`
+    } catch (e: any) {
+      error = e.message
+    }
+  }
+  $effect(() => {
+    range
+    load()
+  })
+  $effect(() => {
+    const t = setInterval(load, 60_000)
+    import('../lib/map/WorldMap.svelte').then((m) => (WorldMap = m.default)).catch(() => {})
+    import('../lib/map/LiveMap.svelte').then((m) => (LiveMap = m.default)).catch(() => {})
+    return () => clearInterval(t)
+  })
+  // Live snapshot every 5s: feeds the realtime card and the live globe.
+  $effect(() => {
+    const poll = () => api.live(id).then((l) => (liveData = l)).catch(() => {})
+    poll()
+    const t = setInterval(poll, 5000)
+    return () => clearInterval(t)
+  })
+
+  // One mapping per dimension so the cards and the "view all" modal agree.
+  const toRows = (dim: Dim, src: Row[]): BarRow[] => {
+    const sorted = [...src].sort((a, b) => (dim === 'event' ? b.pageviews - a.pageviews : b.visitors - a.visitors))
+    switch (dim) {
+      case 'ref':
+        return sorted.map((r) => ({ key: r.key || 'direct', label: r.key || 'Direct', value: r.visitors, direct: r.key === '', icon: r.key ? refIconURL(r.key) : '', title: `${fmtNum(r.pageviews)} views` }))
+      case 'country':
+        return sorted.map((r) => ({ key: r.key || 'XX', label: countryName(r.key), value: r.visitors, prefix: flag(r.key), title: `${fmtNum(r.pageviews)} views` }))
+      case 'event':
+        return sorted.map((r) => ({ key: r.key, label: r.key, value: r.pageviews, title: `${fmtNum(r.visitors)} visitors` }))
+      default:
+        return sorted.map((r) => ({ key: r.key || '∅', label: r.key || 'Unknown', value: r.visitors, title: `${fmtNum(r.pageviews)} views` }))
+    }
+  }
+  const DIM_TITLE: Record<Dim, string> = {
+    page: 'Pages', ref: 'Referrers', utm_source: 'Sources', utm_campaign: 'Campaigns', country: 'Countries', region: 'Regions',
+    browser: 'Browsers', device: 'Devices', os: 'Operating systems', event: 'Events',
+  }
+  // Card tabs, as in the reference: one card per group, a dimension per tab.
+  let sourceTab = $state<'ref' | 'utm_source' | 'utm_campaign'>('ref')
+  let locationTab = $state<'country' | 'region'>('country')
+  let deviceTab = $state<'browser' | 'os' | 'device'>('browser')
+  const rowsFor = (dim: Dim) => toRows(dim, stats?.breakdowns[dim] ?? [])
+  const pages = $derived(rowsFor('page'))
+  const sources = $derived(rowsFor(sourceTab))
+  const locations = $derived(rowsFor(locationTab))
+  const devices = $derived(rowsFor(deviceTab))
+  const events = $derived(rowsFor('event'))
+
+  // "View all" modal.
+  let modal = $state<Dim | null>(null)
+  let modalRows = $state<BarRow[] | null>(null)
+  let filter = $state('')
+  function openAll(dim: Dim) {
+    modal = dim
+    modalRows = null
+    filter = ''
+    api
+      .breakdown(id, dim, range)
+      .then((r) => (modalRows = toRows(dim, r.rows)))
+      .catch((e: any) => (error = e.message))
+  }
+  const filtered = $derived((modalRows ?? []).filter((r) => !filter || r.label.toLowerCase().includes(filter.toLowerCase())))
+  const more = (dim: Dim) => () => openAll(dim)
+  const topCountry = $derived(stats?.breakdowns.country?.[0]?.key ?? '')
+
+  const snippet = $derived(site ? `<script defer src="${location.origin}/glance.js" data-site="${site.id}"><\/script>` : '')
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(snippet)
+      copied = true
+      setTimeout(() => (copied = false), 1500)
+    } catch {}
+  }
+  let timers: Record<string, ReturnType<typeof setTimeout>> = {}
+  function save(patch: Parameters<typeof api.updateSite>[1], key: string) {
+    clearTimeout(timers[key])
+    timers[key] = setTimeout(() => {
+      api
+        .updateSite(id, patch)
+        .then((s) => (site = { ...site!, ...s }))
+        .catch((e: any) => (error = e.message))
+    }, 400)
+  }
+</script>
+
+{#if site && stats}
+  <div class="title">
+    <Icon src={site.has_favicon ? siteIconURL(site.id) : ''} size={22} />
+    <span class="name">{site.name}</span>
+    <span class="domain">{site.domain}</span>
+    {#if live > 0}<span class="live"><span class="dot"></span>{live} online</span>{/if}
+    <span class="spacer"></span>
+    <button type="button" class="plain" class:on={settingsOpen} onclick={() => (settingsOpen = !settingsOpen)}>Settings</button>
+  </div>
+
+  {#if settingsOpen}
+    <div class="settings" transition:panel>
+      <div class="setting">
+        <div class="text"><div class="label">Tracking code</div><div class="hint">Paste before the closing &lt;/head&gt; tag. No cookies, no consent banner needed.</div></div>
+      </div>
+      <div class="code">
+        <span class="snippet">{snippet}</span>
+        <button type="button" class="copy" onclick={copy}>{copied ? 'Copied' : 'Copy'}</button>
+      </div>
+      <div class="setting">
+        <div class="text"><div class="label">Name</div></div>
+        <div class="ctl"><Input value={site.name} aria-label="Name" oninput={(e) => save({ name: e.currentTarget.value }, 'name')} /></div>
+      </div>
+      <div class="setting">
+        <div class="text"><div class="label">Domain</div><div class="hint">Events from other hosts are ignored</div></div>
+        <div class="ctl"><Input value={site.domain} aria-label="Domain" oninput={(e) => save({ domain: e.currentTarget.value }, 'domain')} /></div>
+      </div>
+      <div class="setting">
+        <div class="text"><div class="label">Home country</div><div class="hint">Where the map arcs converge. Blank uses your top country ({countryName(topCountry) || 'none yet'}).</div></div>
+        <div class="ctl short"><Input value={site.home_country} placeholder={topCountry || 'GB'} maxlength={2} aria-label="Home country" oninput={(e) => save({ home_country: e.currentTarget.value.toUpperCase() }, 'home')} /></div>
+      </div>
+      <div class="setting">
+        <div class="text"><div class="label">Favicon</div><div class="hint">Fetched from your site by Glance, never from a third party</div></div>
+        <Button variant="secondary" size="sm" onclick={() => api.refreshFavicon(id).then((s) => (site = { ...site!, ...s }))}>Refresh</Button>
+      </div>
+    </div>
+  {/if}
+
+  <div class="strip">
+    <div class="metrics">
+      <MetricStat label="Visitors" value={fmtNum(stats.totals.visitors)} delta={fmtDelta(stats.totals.visitors, stats.previous.visitors)} />
+      <MetricStat label="Page views" value={fmtNum(stats.totals.pageviews)} delta={fmtDelta(stats.totals.pageviews, stats.previous.pageviews)} />
+      <MetricStat label="Views / visitor" value={fmtRatio(stats.totals.pageviews, stats.totals.visitors)} />
+    </div>
+    <div class="ranges"><Segment options={RANGES.map((r) => ({ value: r, label: r }))} value={range} gap={16} onchange={(r) => (range = r)} /></div>
+  </div>
+
+  {#key stats.range}
+    <div in:pageIn class="stack">
+      <AreaChart series={stats.series} bucket={stats.bucket} {range} />
+
+      <div class="grid">
+        <Realtime minutes={liveData?.minutes ?? Array(30).fill(0)} total={liveData?.total_30m ?? 0} onmore={() => { mapView = 'live'; document.querySelector('.map-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }} />
+        <BarList title="Events" rows={events} empty="Call glance('name') from your site" onmore={more('event')} />
+        <BarList title="Pages" rows={pages} empty="No page views yet" onmore={more('page')} />
+        <BarList
+          title="Sources"
+          rows={sources}
+          empty={sourceTab === 'ref' ? 'No referrers yet' : sourceTab === 'utm_source' ? 'No utm_source or ?ref= tags seen' : 'No utm_campaign tags seen'}
+          onmore={more(sourceTab)}
+          tabs={[{ value: 'ref', label: 'Referrer' }, { value: 'utm_source', label: 'Source' }, { value: 'utm_campaign', label: 'Campaign' }]}
+          tab={sourceTab}
+          ontab={(v) => (sourceTab = v)}
+        >
+          {#snippet icon(r)}{#if sourceTab === 'ref'}<Icon src={r.icon} direct={r.direct} />{/if}{/snippet}
+        </BarList>
+        <BarList
+          title="Locations"
+          rows={locations}
+          empty={locationTab === 'country' ? 'No locations yet' : 'No regions yet'}
+          onmore={more(locationTab)}
+          tabs={[{ value: 'country', label: 'Countries' }, { value: 'region', label: 'Regions' }]}
+          tab={locationTab}
+          ontab={(v) => (locationTab = v)}
+        />
+        <BarList
+          title="Devices"
+          rows={devices}
+          onmore={more(deviceTab)}
+          tabs={[{ value: 'browser', label: 'Browsers' }, { value: 'os', label: 'OS' }, { value: 'device', label: 'Devices' }]}
+          tab={deviceTab}
+          ontab={(v) => (deviceTab = v)}
+        >
+          {#snippet icon(r)}<BrandIcon kind={deviceTab} name={r.key} />{/snippet}
+        </BarList>
+      </div>
+
+      <div class="map-section">
+        <div class="head">
+          <div class="card-title">{mapView === 'live' ? 'Live' : 'Visitors by country'}</div>
+          <div class="map-controls">
+            <span class="hint">{mapView === 'live' ? `${liveData?.total ?? live} online` : `${stats.breakdowns.country.length} ${stats.breakdowns.country.length === 1 ? 'country' : 'countries'}`}</span>
+            <Segment options={[{ value: 'live', label: 'Live' }, { value: 'range', label: range }]} value={mapView} gap={14} onchange={(v) => (mapView = v)} />
+          </div>
+        </div>
+        {#if mapView === 'live'}
+          {#if LiveMap && liveData}
+            <LiveMap live={liveData} home={site.home_country || topCountry} />
+          {:else}
+            <div class="map-placeholder tall"></div>
+          {/if}
+        {:else if WorldMap}
+          <WorldMap rows={stats.breakdowns.country} home={site.home_country || topCountry} />
+        {:else}
+          <div class="map-placeholder"></div>
+        {/if}
+      </div>
+    </div>
+  {/key}
+{:else if error}
+  <p class="bad">{error}</p>
+{/if}
+
+{#if modal}
+  <Modal title={DIM_TITLE[modal]} subtitle="{site?.name} · {range} · {modalRows ? `${modalRows.length} ${modal === 'event' ? 'events' : 'rows'}` : 'loading'}" onclose={() => (modal = null)}>
+    <div class="modal-search"><Input bind:value={filter} placeholder="Filter" aria-label="Filter rows" /></div>
+    {#if modalRows}
+      <BarList bare rows={filtered} empty="No matches">
+        {#snippet icon(r)}
+          {#if modal === 'ref'}<Icon src={r.icon} direct={r.direct} />
+          {:else if modal === 'browser' || modal === 'os' || modal === 'device'}<BrandIcon kind={modal} name={r.key} />{/if}
+        {/snippet}
+      </BarList>
+    {/if}
+  </Modal>
+{/if}
+
+<style>
+  .modal-search { position: sticky; top: 0; background: var(--up-bg); padding: 4px 0 12px; z-index: 1; }
+  .title { display: flex; align-items: center; gap: 10px; margin-top: -12px; }
+  .name { font: var(--up-type-row-title); }
+  .domain { font: var(--up-type-meta); color: var(--up-text-muted); }
+  .live { display: flex; align-items: center; gap: 6px; font: var(--up-type-meta); color: var(--up-text-muted); margin-left: 6px; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--up-accent); }
+  .spacer { flex: 1; }
+  .plain { background: none; border: none; padding: 0; cursor: pointer; font: var(--up-type-ui); color: var(--up-text-muted); }
+  .plain:hover, .plain.on { color: var(--up-ink); }
+
+  .settings { display: flex; flex-direction: column; gap: 14px; padding: 16px 18px; border: 1px solid var(--up-border-hairline); border-radius: var(--up-radius-card); margin-top: -16px; }
+  .setting { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+  .text { display: flex; flex-direction: column; gap: 2px; }
+  .label { font: var(--up-type-setting); }
+  .hint { font: var(--up-type-meta); color: var(--up-text-muted); }
+  .ctl { width: 240px; flex-shrink: 0; }
+  .ctl.short { width: 90px; }
+  .code { background: var(--up-surface-dark); border-radius: var(--up-radius-tooltip); padding: 12px 14px; display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+  .snippet { font: var(--up-type-code); color: var(--up-text-on-dark); word-break: break-all; }
+  .copy { background: none; border: none; padding: 2px 0; cursor: pointer; font: var(--up-type-small); color: var(--up-operational-strong); flex-shrink: 0; }
+  .copy:hover { color: var(--up-text-on-dark); }
+
+  .strip { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; }
+  .metrics { display: flex; gap: 36px; }
+  .ranges { padding-bottom: 4px; }
+  .stack { display: flex; flex-direction: column; gap: 36px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .map-section { display: flex; flex-direction: column; gap: 12px; }
+  .head { display: flex; align-items: baseline; justify-content: space-between; }
+  .card-title { font: var(--up-type-setting); font-weight: 700; }
+  .map-placeholder { height: 340px; border: 1px solid var(--up-border-hairline); border-radius: var(--up-radius-card); }
+  .map-placeholder.tall { height: 420px; }
+  .map-controls { display: flex; align-items: center; gap: 18px; }
+  .bad { font: var(--up-type-meta); color: var(--up-degraded-strong); }
+  @media (max-width: 600px) {
+    .grid { grid-template-columns: 1fr; }
+    .strip { flex-direction: column; align-items: flex-start; }
+    .metrics { gap: 24px; flex-wrap: wrap; }
+    .setting { flex-direction: column; align-items: flex-start; gap: 8px; }
+    .ctl { width: 100%; }
+  }
+</style>

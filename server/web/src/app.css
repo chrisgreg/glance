@@ -1,0 +1,140 @@
+/* Design tokens — from the UP design system (tokens/*.css). */
+:root {
+  --up-bg: #FDFDFE;
+  --up-bg-hover: #FAFAFC;
+  --up-ink: #1A1B25;
+  --up-surface-dark: #17181F;
+  --up-text: #1A1B25;
+  --up-text-secondary: #6B6D7C;
+  --up-text-muted: #9C9EAB;
+  --up-text-inactive: #B4B6C2;
+  --up-text-faint: #C2C4CE;
+  --up-text-on-dark: #FDFDFE;
+  --up-text-on-dark-muted: rgba(253, 253, 254, 0.55);
+  --up-border-hairline: #F0F1F5;
+  --up-border-control: #E4E6EE;
+  --up-divider-on-dark: rgba(253, 253, 254, 0.12);
+  --up-accent: #7C83E8;
+  --up-accent-hover: #5A62D4;
+  --up-accent-line: #8B92EC;
+  --up-accent-tint: #EEF0FB;
+  --up-operational: #DBDFF8;
+  --up-operational-strong: #A9ADD9;
+  --up-degraded: #F5B266;
+  --up-degraded-strong: #E0912F;
+  --up-outage: #9B7BEA;
+  --up-outage-strong: #8A63E0;
+  --up-outage-on-dark: #B79CF2;
+  --up-nodata: #F0F1F5;
+  --up-shadow-tooltip: 0 8px 24px rgba(23, 24, 31, 0.25);
+  --up-shadow-knob: 0 1px 3px rgba(23, 24, 31, 0.15);
+  --up-ring-inset: inset 0 0 0 1px rgba(23, 24, 31, 0.06);
+
+  --up-font: 'Figtree', sans-serif;
+  --up-font-mono: ui-monospace, 'SF Mono', Menlo, monospace;
+  --up-type-wordmark: 700 20px/1.2 var(--up-font);
+  --up-type-metric: 700 24px/1.2 var(--up-font);
+  --up-type-row-title: 600 15px/1.3 var(--up-font);
+  --up-type-status-line: 500 15px/1.4 var(--up-font);
+  --up-type-setting: 600 14px/1.3 var(--up-font);
+  --up-type-ui: 600 13px/1.4 var(--up-font);
+  --up-type-meta: 500 13px/1.4 var(--up-font);
+  --up-type-small: 600 12px/1.4 var(--up-font);
+  --up-type-caption: 500 11px/1.4 var(--up-font);
+  --up-type-code: 400 12px/1.6 var(--up-font-mono);
+
+  --up-radius-bar: 2px;
+  --up-radius-cell: 3px;
+  --up-radius-control: 8px;
+  --up-radius-tooltip: 10px;
+  --up-radius-card: 14px;
+  --up-radius-pill: 999px;
+  --up-space-1: 3px;
+  --up-space-2: 8px;
+  --up-space-3: 10px;
+  --up-space-4: 16px;
+  --up-space-5: 24px;
+  --up-space-6: 40px;
+  --up-space-7: 56px;
+  --up-page-max: 720px;
+  --up-page-pad: 32px;
+}
+
+/* Dark theme: same hierarchy, inverted ramp. Applied by an explicit choice
+   (data-theme) or by the system preference when no choice was made. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --up-bg: #131419;
+    --up-bg-hover: #191A21;
+    --up-ink: #F3F3F7;
+    --up-surface-dark: #23242D;
+    --up-text: #F3F3F7;
+    --up-text-secondary: #A9ABB8;
+    --up-text-muted: #7F818F;
+    --up-text-inactive: #62646F;
+    --up-text-faint: #4E5059;
+    --up-border-hairline: #1F2027;
+    --up-border-control: #2B2C36;
+    --up-accent-tint: #23253A;
+    --up-operational: #2E3150;
+    --up-operational-strong: #8F95E0;
+    --up-nodata: #1C1D24;
+    --up-shadow-tooltip: 0 8px 24px rgba(0, 0, 0, 0.5);
+    --up-ring-inset: inset 0 0 0 1px rgba(253, 253, 254, 0.08);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --up-bg: #131419;
+  --up-bg-hover: #191A21;
+  --up-ink: #F3F3F7;
+  --up-surface-dark: #23242D;
+  --up-text: #F3F3F7;
+  --up-text-secondary: #A9ABB8;
+  --up-text-muted: #7F818F;
+  --up-text-inactive: #62646F;
+  --up-text-faint: #4E5059;
+  --up-border-hairline: #1F2027;
+  --up-border-control: #2B2C36;
+  --up-accent-tint: #23253A;
+  --up-operational: #2E3150;
+  --up-operational-strong: #8F95E0;
+  --up-nodata: #1C1D24;
+  --up-shadow-tooltip: 0 8px 24px rgba(0, 0, 0, 0.5);
+  --up-ring-inset: inset 0 0 0 1px rgba(253, 253, 254, 0.08);
+  color-scheme: dark;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--up-bg);
+  color: var(--up-text);
+  font: var(--up-type-meta);
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--up-accent); text-decoration: none; transition: color 120ms ease-out; }
+a:hover { color: var(--up-accent-hover); }
+button { font: inherit; }
+:focus { outline: none; }
+:focus-visible { outline: 2px solid var(--up-accent-line); outline-offset: 3px; border-radius: 4px; }
+h1, h2, h3, p { margin: 0; }
+
+.page { max-width: var(--up-page-max); margin: 0 auto; padding: 72px var(--up-page-pad) 64px; display: flex; flex-direction: column; gap: var(--up-space-6); }
+.muted { color: var(--up-text-muted); }
+.secondary { color: var(--up-text-secondary); }
+.faint { color: var(--up-text-faint); }
+.caption { font: var(--up-type-caption); }
+.small { font: var(--up-type-small); }
+.footer { text-align: center; font: var(--up-type-small); font-weight: 500; color: var(--up-text-faint); }
+
+@media (max-width: 600px) {
+  :root { --up-page-pad: 16px; }
+  .page { padding-top: 40px; }
+}
+
+/* Interaction feedback: colour only, no motion, per the design system. */
+button, a, input { transition: background-color 120ms ease-out, color 120ms ease-out, border-color 120ms ease-out, box-shadow 120ms ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: 0ms !important; animation-duration: 0ms !important; }
+}

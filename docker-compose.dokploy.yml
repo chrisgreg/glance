@@ -1,0 +1,28 @@
+# Compose file for Dokploy (or any host that puts Traefik in front of you).
+# Named volume (the image runs as uid 1000), joins dokploy-network so Traefik
+# can route your domain here, and publishes no port.
+# Set GLANCE_ADMIN_USER and GLANCE_ADMIN_PASSWORD in Dokploy's Environment tab.
+services:
+  glance:
+    build:
+      context: ./server
+    image: ghcr.io/chrisgreg/glance:latest
+    restart: unless-stopped
+    expose:
+      - "8080"
+    volumes:
+      - "glance-data:/data"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      GLANCE_DATABASE_PATH: /data/glance.db
+    networks:
+      - dokploy-network
+
+volumes:
+  glance-data:
+
+networks:
+  dokploy-network:
+    external: true

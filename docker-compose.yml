@@ -1,0 +1,16 @@
+services:
+  glance:
+    build:
+      context: ./server
+    image: ghcr.io/chrisgreg/glance:latest
+    restart: unless-stopped
+    ports:
+      - "8082:8080"
+    volumes:
+      # The container runs as uid 1000. On Linux hosts run `mkdir -p data && chown 1000:1000 data` once.
+      - "./data:/data"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      GLANCE_DATABASE_PATH: /data/glance.db
