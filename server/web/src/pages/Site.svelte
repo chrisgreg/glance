@@ -173,7 +173,7 @@
 
   {#key stats.range}
     <div in:pageIn class="stack">
-      <AreaChart series={stats.series} bucket={stats.bucket} {range} />
+      <AreaChart series={stats.series} markers={stats.markers} bucket={stats.bucket} {range} />
 
       <div class="grid">
         <Realtime minutes={liveData?.minutes ?? Array(30).fill(0)} total={liveData?.total_30m ?? 0} onmore={() => { mapView = 'live'; document.querySelector('.map-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }} />

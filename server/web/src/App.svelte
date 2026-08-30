@@ -97,7 +97,7 @@
   .right { display: flex; align-items: center; gap: 18px; font: var(--up-type-ui); }
   .plain { background: none; border: none; padding: 0; cursor: pointer; font: var(--up-type-ui); color: var(--up-text-muted); }
   .plain:hover { color: var(--up-ink); }
-  .gear { display: inline-flex; color: var(--up-text-faint); }
+  .gear { display: inline-flex; color: var(--up-text-muted); }
   .gear:hover { color: var(--up-ink); }
   .body { display: flex; flex-direction: column; gap: 36px; }
 </style>

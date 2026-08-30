@@ -13,7 +13,6 @@
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.3.0",
     "@tsconfig/svelte": "^5.0.8",
-    "@types/d3-shape": "^3.1.8",
     "@types/geojson": "^7946.0.16",
     "@types/node": "^24.13.3",
     "@types/topojson-client": "^3.1.5",
@@ -26,8 +25,6 @@
     "world-countries": "^5.1.0"
   },
   "dependencies": {
-    "d3-shape": "^3.2.0",
-    "layerchart": "^2.3.1",
     "maplibre-gl": "^5.24.0",
     "topojson-client": "^3.1.0"
   }

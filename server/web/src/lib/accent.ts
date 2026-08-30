@@ -13,6 +13,25 @@ function mix(a: [number, number, number], b: [number, number, number], t: number
   return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]
 }
 
+function luminance([r, g, b]: [number, number, number]): number {
+  const f = (v: number) => {
+    const c = v / 255
+    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)
+  }
+  return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b)
+}
+function contrast(a: [number, number, number], b: [number, number, number]): number {
+  const la = luminance(a)
+  const lb = luminance(b)
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05)
+}
+/** Darken (light theme) or lighten (dark theme) until text on the page background reads at 3:1. */
+function readable(c: [number, number, number], bg: [number, number, number], towards: [number, number, number]): [number, number, number] {
+  let out = c
+  for (let i = 0; i < 12 && contrast(out, bg) < 3; i++) out = mix(out, towards, 0.12)
+  return out
+}
+
 export const DEFAULT_ACCENT = '#7C83E8'
 export const SWATCHES = [
   { name: 'Periwinkle', hex: '#7C83E8' },
@@ -34,12 +53,15 @@ export function applyAccent(hex: string) {
   const ink: [number, number, number] = [26, 27, 37]
   const darkBg: [number, number, number] = [19, 20, 25]
   const dark = document.documentElement.dataset.theme === 'dark' || (!document.documentElement.dataset.theme && matchMedia('(prefers-color-scheme: dark)').matches)
-  root.setProperty('--up-accent', hex)
-  root.setProperty('--up-accent-hover', rgbToHex(mix(c, ink, 0.22)))
-  root.setProperty('--up-accent-line', rgbToHex(mix(c, white, 0.12)))
-  root.setProperty('--up-accent-tint', rgbToHex(dark ? mix(c, darkBg, 0.78) : mix(c, white, 0.85)))
-  root.setProperty('--up-operational', rgbToHex(dark ? mix(c, darkBg, 0.68) : mix(c, white, 0.72)))
-  root.setProperty('--up-operational-strong', rgbToHex(dark ? mix(c, white, 0.15) : mix(c, white, 0.35)))
+  const bg = dark ? darkBg : white
+  // Text and controls get a contrast-checked shade; lines, dots and arcs keep the raw hue.
+  const text = readable(c, bg, dark ? white : ink)
+  root.setProperty('--up-accent', rgbToHex(text))
+  root.setProperty('--up-accent-hover', rgbToHex(mix(text, dark ? white : ink, 0.2)))
+  root.setProperty('--up-accent-line', hex)
+  root.setProperty('--up-accent-tint', rgbToHex(dark ? mix(c, darkBg, 0.72) : mix(c, white, 0.78)))
+  root.setProperty('--up-operational', rgbToHex(dark ? mix(c, darkBg, 0.55) : mix(c, white, 0.6)))
+  root.setProperty('--up-operational-strong', rgbToHex(dark ? mix(c, white, 0.15) : readable(mix(c, white, 0.2), bg, ink)))
 }
 
 /** Remove overrides so the stylesheet's defaults apply again. */

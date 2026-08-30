@@ -14,6 +14,6 @@
 </button>
 
 <style>
-  .toggle { display: inline-flex; background: none; border: none; padding: 2px; cursor: pointer; color: var(--up-text-faint); }
+  .toggle { display: inline-flex; background: none; border: none; padding: 2px; cursor: pointer; color: var(--up-text-muted); }
   .toggle:hover { color: var(--up-ink); }
 </style>

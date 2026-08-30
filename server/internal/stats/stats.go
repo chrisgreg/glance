@@ -4,6 +4,7 @@ package stats
 import (
 	"context"
 	"database/sql"
+	"sort"
 	"time"
 )
 
@@ -30,6 +31,14 @@ type Totals struct {
 	Visitors  int `json:"visitors"`
 }
 
+// Marker is a notable referrer in one bucket, drawn as a favicon above the
+// chart. Only available while the raw events are still retained.
+type Marker struct {
+	T        string `json:"t"`
+	Ref      string `json:"ref"`
+	Visitors int    `json:"visitors"`
+}
+
 // Summary is the dashboard payload for one site and range.
 type Summary struct {
 	Range      string           `json:"range"`
@@ -39,6 +48,7 @@ type Summary struct {
 	Totals     Totals           `json:"totals"`
 	Previous   Totals           `json:"previous"` // the equal window before From
 	Series     []Point          `json:"series"`
+	Markers    []Marker         `json:"markers"`
 	Breakdowns map[string][]Row `json:"breakdowns"`
 }
 
@@ -107,6 +117,77 @@ func (s *Store) Summary(ctx context.Context, siteID, rng string, now time.Time, 
 		}
 		out.Breakdowns[dim] = rows
 	}
+	out.Markers, err = s.markers(ctx, siteID, from, to, bucket)
+	if err != nil {
+		return out, err
+	}
+	return out, nil
+}
+
+// markers finds, per bucket, the referrer that brought the most visitors,
+// keeping only those worth pointing at: at least two visitors, or the whole
+// bucket when it is small. Reads raw events, so it only covers the retained
+// window; buckets older than that simply have no marker. Capped at eight.
+func (s *Store) markers(ctx context.Context, siteID string, from, to time.Time, bucket string) ([]Marker, error) {
+	keyLen := 13
+	layout := "2006-01-02T15"
+	if bucket == "day" {
+		keyLen, layout = 10, "2006-01-02"
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT substr(ts, 1, ?), ref_host, COUNT(DISTINCT visitor) AS v FROM events
+		WHERE site_id = ? AND ts >= ? AND ts < ? AND kind = 'pageview' AND ref_host != ''
+		GROUP BY substr(ts, 1, ?), ref_host ORDER BY v DESC`, keyLen, siteID, from.Format("2006-01-02T15:04:05"), to.Format("2006-01-02T15:04:05"), keyLen)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	seen := map[string]bool{}
+	var all []Marker
+	for rows.Next() {
+		var k, ref string
+		var v int
+		if err := rows.Scan(&k, &ref, &v); err != nil {
+			return nil, err
+		}
+		if seen[k] || v < 2 {
+			continue
+		}
+		t, err := time.Parse(layout, k)
+		if err != nil {
+			continue
+		}
+		seen[k] = true
+		all = append(all, Marker{T: t.Format(time.RFC3339), Ref: ref, Visitors: v})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	// Rows arrived strongest first. Drop a marker when a stronger one for the
+	// same referrer sits in the neighbouring bucket, so icons never touch.
+	stepD := time.Hour
+	if bucket == "day" {
+		stepD = 24 * time.Hour
+	}
+	out := []Marker{}
+	for _, m := range all {
+		mt, _ := time.Parse(time.RFC3339, m.T)
+		adjacent := false
+		for _, k := range out {
+			kt, _ := time.Parse(time.RFC3339, k.T)
+			if k.Ref == m.Ref && kt.Sub(mt).Abs() <= stepD {
+				adjacent = true
+				break
+			}
+		}
+		if adjacent {
+			continue
+		}
+		out = append(out, m)
+		if len(out) >= 8 {
+			break
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].T < out[j].T })
 	return out, nil
 }
 

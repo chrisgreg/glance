@@ -22,6 +22,12 @@ export interface Totals {
 
 export type Dim = 'page' | 'ref' | 'country' | 'region' | 'device' | 'browser' | 'os' | 'event' | 'utm_source' | 'utm_campaign'
 
+export interface Marker {
+  t: string
+  ref: string
+  visitors: number
+}
+
 export interface Summary {
   range: Range
   from: string
@@ -30,6 +36,7 @@ export interface Summary {
   totals: Totals
   previous: Totals
   series: Point[]
+  markers: Marker[]
   breakdowns: Record<Dim, Row[]>
 }
 
