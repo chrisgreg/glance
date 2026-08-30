@@ -91,6 +91,8 @@
     google?.connected
     loadTerms()
   })
+  // The card shows the same top 10 as the other breakdowns; the modal has everything.
+  const TOP_TERMS = 10
   const termRows = $derived(
     terms.map((t) => ({
       key: t.query,
@@ -297,9 +299,8 @@
 
       <div class="grid">
         <Realtime minutes={liveData?.minutes ?? Array(30).fill(0)} total={liveData?.total_30m ?? 0} onmore={() => { mapView = 'live'; document.querySelector('.map-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }} />
-        <BarList title="Events" rows={events} empty="Call glance('name') from your site" onmore={more('event')} />
         {#if google?.connected}
-          <BarList title="Search terms" rows={termRows} empty={range === '24h' ? 'Google reports search terms two to three days late' : 'No Google search terms for this range yet'} onmore={more('search')} />
+          <BarList title="Search terms" rows={termRows.slice(0, TOP_TERMS)} empty={range === '24h' ? 'Google reports search terms two to three days late' : 'No Google search terms for this range yet'} onmore={more('search')} />
         {/if}
         <BarList title="Pages" rows={pages} empty="No page views yet" onmore={more('page')} />
         <BarList
@@ -332,6 +333,9 @@
         >
           {#snippet icon(r)}<BrandIcon kind={deviceTab} name={r.key} />{/snippet}
         </BarList>
+        <div class="wide">
+          <BarList title="Events" rows={events} empty="Call glance('name') from your site" onmore={more('event')} />
+        </div>
       </div>
 
       <div class="map-section">
@@ -413,6 +417,7 @@
   .ranges { padding-bottom: 4px; }
   .stack { display: flex; flex-direction: column; gap: 36px; }
   .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .wide { grid-column: 1 / -1; }
   .map-section { display: flex; flex-direction: column; gap: 12px; }
   .head { display: flex; align-items: baseline; justify-content: space-between; }
   .card-title { font: var(--up-type-setting); font-weight: 700; }
