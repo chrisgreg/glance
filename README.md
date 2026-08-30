@@ -20,7 +20,7 @@ One Go binary, one SQLite file, one Docker container. Sites add a cookieless sni
 
 ## Architecture
 
-The snippet posts one small JSON body per page view (site id, URL, referrer, screen width, time zone) with `sendBeacon`, and again on `pushState` and `popstate` for single-page apps. The Go server validates the host against the site's domain, drops bots, derives browser, OS, device, country, region and campaign tags, and pushes the event onto an in-memory queue. The request never touches the database. A writer goroutine commits the queue every second or every 200 events in one transaction. Every five minutes today's and yesterday's rollups are rebuilt from raw events; the dashboard reads only rollups, so it stays fast however much traffic you keep. The embedded Svelte UI lists your sites and, per site, shows a chart, tabbed breakdown cards, a live 3D globe and a range map.
+The snippet posts one small JSON body per page view (site id, URL, referrer, screen width, time zone) with `sendBeacon`, and again on `pushState` and `popstate` for single-page apps. The Go server validates the host against the site's domain, drops bots, derives browser, OS, device, country, region and campaign tags, and pushes the event onto an in-memory queue. The request never touches the database. A writer goroutine commits the queue every second or every 200 events in one transaction. Every minute (and on demand when the dashboard is opened) today's and yesterday's rollups are rebuilt from raw events; the dashboard reads only rollups, so it stays fast however much traffic you keep. The embedded Svelte UI lists your sites and, per site, shows a chart, tabbed breakdown cards, a live 3D globe and a range map.
 
 ## What is in the box
 
@@ -40,7 +40,7 @@ docker compose up -d --build
 open http://localhost:8082
 ```
 
-Add a website, click **Tracking code**, and paste the snippet before `</head>`. Data appears after the next rollup (every five minutes).
+Add a website, click **Tracking code**, and paste the snippet before `</head>`. Data appears as soon as you open the dashboard.
 
 Data lives in `./data/glance.db`. Back up by copying that file (use `sqlite3 data/glance.db ".backup backup.db"` for a consistent copy while running).
 

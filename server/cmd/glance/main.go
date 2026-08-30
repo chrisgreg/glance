@@ -107,8 +107,8 @@ func run() error {
 	return nil
 }
 
-// maintenance rolls up every five minutes, prunes raw events hourly and
-// refreshes site favicons weekly.
+// maintenance rolls up every minute, prunes raw events hourly and refreshes
+// site favicons weekly.
 func maintenance(ctx context.Context, log *slog.Logger, db *sqlDB, siteStore *sites.Store, st *settings.Store, fetcher *favicons.Fetcher, cfg config.Config) {
 	roll := func() {
 		if err := rollup.Run(ctx, db, log, time.Now()); err != nil && ctx.Err() == nil {
@@ -144,7 +144,7 @@ func maintenance(ctx context.Context, log *slog.Logger, db *sqlDB, siteStore *si
 	}
 	roll()
 	prune()
-	rt := time.NewTicker(5 * time.Minute)
+	rt := time.NewTicker(time.Minute)
 	pt := time.NewTicker(time.Hour)
 	defer rt.Stop()
 	defer pt.Stop()

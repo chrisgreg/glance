@@ -3,6 +3,7 @@
 package api
 
 import (
+	"context"
 	"crypto/sha256"
 	"database/sql"
 	_ "embed"
@@ -16,6 +17,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/chrisgreg/glance/server/internal/auth"
@@ -63,6 +65,27 @@ type Server struct {
 	RetentionFromEnv bool
 	StartedAt        time.Time
 	DatabasePath     string
+
+	rollMu   sync.Mutex
+	lastRoll time.Time
+}
+
+// freshen rebuilds today's rollups if the last rebuild is older than 30s, so
+// a dashboard request never shows raw-event counts ahead of the totals.
+func (s *Server) freshen(ctx context.Context) {
+	s.rollMu.Lock()
+	defer s.rollMu.Unlock()
+	if time.Since(s.lastRoll) < 30*time.Second {
+		return
+	}
+	if err := s.Writer.Flush(); err != nil {
+		s.Log.Warn("rollup.flush_failed", "error", err.Error())
+	}
+	if err := rollup.Run(ctx, s.DB, s.Log, s.Now()); err != nil {
+		s.Log.Warn("rollup.on_demand_failed", "error", err.Error())
+		return
+	}
+	s.lastRoll = time.Now()
 }
 
 // Handler builds the router.
@@ -358,6 +381,7 @@ func (s *Server) listSites(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
+	s.freshen(r.Context())
 	now := s.Now()
 	out := make([]siteView, 0, len(list))
 	for _, st := range list {
@@ -463,6 +487,7 @@ func (s *Server) siteStats(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
+	s.freshen(r.Context())
 	rng := r.URL.Query().Get("range")
 	if rng == "" {
 		rng = "7d"
