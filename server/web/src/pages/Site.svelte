@@ -430,8 +430,8 @@
       <AreaChart series={stats.series} markers={stats.markers} bucket={stats.bucket} {range} revenue={revenueSeries} currency={revenue?.currency ?? ''} />
 
       <div class="grid">
-        <Realtime minutes={liveData?.minutes ?? Array(30).fill(0)} total={liveData?.total_30m ?? 0} onmore={() => { mapView = 'live'; document.querySelector('.map-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }} />
         {#if revenue}
+          <div class="wide">
           <BarList
             title="Revenue"
             rows={revenueRows}
@@ -443,7 +443,9 @@
           >
             {#snippet icon(r)}{#if revenueTab === 'ref'}<Icon src={r.icon} direct={r.direct} />{/if}{/snippet}
           </BarList>
+          </div>
         {/if}
+        <Realtime minutes={liveData?.minutes ?? Array(30).fill(0)} total={liveData?.total_30m ?? 0} onmore={() => { mapView = 'live'; document.querySelector('.map-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }} />
         {#if google?.connected}
           <BarList title="Search terms" rows={termRows.slice(0, TOP_TERMS)} empty={range === '24h' ? 'Google reports search terms two to three days late' : 'No Google search terms for this range yet'} onmore={more('search')} />
         {/if}
@@ -478,9 +480,7 @@
         >
           {#snippet icon(r)}<BrandIcon kind={deviceTab} name={r.key} />{/snippet}
         </BarList>
-        <div class="wide">
-          <BarList title="Events" rows={events} empty="Call glance('name') from your site" onmore={more('event')} />
-        </div>
+        <BarList title="Events" rows={events} empty="Call glance('name') from your site" onmore={more('event')} />
       </div>
 
       <div class="map-section">
