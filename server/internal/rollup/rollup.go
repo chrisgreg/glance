@@ -19,8 +19,8 @@ import (
 // Dimensions stored in daily_stats.
 var Dims = []string{"page", "ref", "country", "region", "device", "browser", "os", "event", "utm_source", "utm_campaign"}
 
-// Column per dimension in the events table.
-var dimColumn = map[string]string{
+// DimColumn is the events column behind each dimension.
+var DimColumn = map[string]string{
 	"page": "path", "ref": "ref_host", "country": "country", "region": "region", "device": "device", "browser": "browser", "os": "os", "event": "name",
 	"utm_source": "utm_source", "utm_campaign": "utm_campaign",
 }
@@ -88,7 +88,7 @@ func Day(ctx context.Context, db *sql.DB, siteID string, day time.Time) error {
 		return err
 	}
 	for _, dim := range Dims {
-		col := dimColumn[dim]
+		col := DimColumn[dim]
 		kindFilter := `kind = 'pageview'`
 		if dim == "event" {
 			kindFilter = `kind = 'event'`

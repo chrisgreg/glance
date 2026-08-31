@@ -92,6 +92,21 @@ func (s *Server) polarStore() *polar.Store {
 	return s.Polar.Store
 }
 
+func (s *Server) retentionDaysCtx(ctx context.Context) int {
+	if g, err := s.Settings.General(ctx, s.RetentionDays, s.RetentionFromEnv); err == nil && g.RetentionDays > 0 {
+		return g.RetentionDays
+	}
+	return s.RetentionDays
+}
+
+// retentionDays is how far back raw events, and so filtered views, reach.
+func (s *Server) retentionDays(r *http.Request) int {
+	if g, err := s.Settings.General(r.Context(), s.RetentionDays, s.RetentionFromEnv); err == nil && g.RetentionDays > 0 {
+		return g.RetentionDays
+	}
+	return s.RetentionDays
+}
+
 // freshen rebuilds today's rollups if the last rebuild is older than 30s, so
 // a dashboard request never shows raw-event counts ahead of the totals.
 func (s *Server) freshen(ctx context.Context) {
@@ -165,7 +180,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/v1/export", s.adminAuth(s.export))
 
 	// MCP (read-only) for AI agents: Streamable HTTP at /mcp.
-	mux.Handle("/mcp", s.mcpAuth(mcp.Handler(mcp.NewServer(mcp.Stores{Sites: s.Sites, Stats: s.Stats, Search: s.searchStore(), Revenue: s.polarStore(), Now: s.Now}, Version), s.Log)))
+	mux.Handle("/mcp", s.mcpAuth(mcp.Handler(mcp.NewServer(mcp.Stores{RetentionDays: s.retentionDaysCtx, Sites: s.Sites, Stats: s.Stats, Search: s.searchStore(), Revenue: s.polarStore(), Now: s.Now}, Version), s.Log)))
 
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "no such endpoint")
@@ -531,7 +546,12 @@ func (s *Server) siteStats(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid", "range must be one of "+strings.Join(stats.Ranges, ", "))
 		return
 	}
-	sum, err := s.Stats.Summary(r.Context(), st.ID, rng, s.Now(), 10)
+	var sum stats.Summary
+	if filters := stats.ParseFilters(r.URL.Query()); len(filters) > 0 {
+		sum, err = s.Stats.FilteredSummary(r.Context(), st.ID, rng, s.Now(), 10, filters, s.retentionDays(r))
+	} else {
+		sum, err = s.Stats.Summary(r.Context(), st.ID, rng, s.Now(), 10)
+	}
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -575,7 +595,12 @@ func (s *Server) siteBreakdown(w http.ResponseWriter, r *http.Request) {
 	if v, err := strconv.Atoi(q.Get("limit")); err == nil && v > 0 && v <= 500 {
 		limit = v
 	}
-	rows, err := s.Stats.Breakdown(r.Context(), st.ID, dim, rng, s.Now(), limit)
+	var rows []stats.Row
+	if filters := stats.ParseFilters(q); len(filters) > 0 {
+		rows, err = s.Stats.FilteredBreakdown(r.Context(), st.ID, dim, rng, s.Now(), limit, filters, s.retentionDays(r))
+	} else {
+		rows, err = s.Stats.Breakdown(r.Context(), st.ID, dim, rng, s.Now(), limit)
+	}
 	if err != nil {
 		s.fail(w, err)
 		return

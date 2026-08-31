@@ -25,11 +25,13 @@ import (
 
 // Stores is what the tools read from.
 type Stores struct {
-	Sites   *sites.Store
-	Stats   *stats.Store
-	Search  *searchconsole.Store
-	Revenue *polar.Store
-	Now     func() time.Time
+	// RetentionDays bounds filtered views, which read raw events.
+	RetentionDays func(ctx context.Context) int
+	Sites         *sites.Store
+	Stats         *stats.Store
+	Search        *searchconsole.Store
+	Revenue       *polar.Store
+	Now           func() time.Time
 }
 
 // NewServer builds the MCP server with every tool registered.
@@ -305,8 +307,9 @@ func (t *tools) overview(ctx context.Context, _ *sdk.CallToolRequest, in Overvie
 // ---- site_stats ----
 
 type SiteStatsIn struct {
-	Site  string `json:"site" jsonschema:"site id, name or domain"`
-	Range string `json:"range,omitempty" jsonschema:"24h, 7d, 30d or 90d; default 7d"`
+	Site    string            `json:"site" jsonschema:"site id, name or domain"`
+	Range   string            `json:"range,omitempty" jsonschema:"24h, 7d, 30d or 90d; default 7d"`
+	Filters map[string]string `json:"filters,omitempty" jsonschema:"narrow to visitors matching every entry, dimension to key, e.g. {\"ref\": \"google.com\", \"country\": \"GB\"}; an empty ref means direct. Filtered views come from raw events and only reach back as far as retention, so truncated may be set"`
 }
 
 type SiteStatsOut struct {
@@ -325,7 +328,12 @@ func (t *tools) siteStats(ctx context.Context, _ *sdk.CallToolRequest, in SiteSt
 		return nil, SiteStatsOut{}, err
 	}
 	now := t.st.Now()
-	sum, err := t.st.Stats.Summary(ctx, s.ID, rng, now, 10)
+	var sum stats.Summary
+	if f := t.filters(in.Filters); len(f) > 0 {
+		sum, err = t.st.Stats.FilteredSummary(ctx, s.ID, rng, now, 10, f, t.retention(ctx))
+	} else {
+		sum, err = t.st.Stats.Summary(ctx, s.ID, rng, now, 10)
+	}
 	if err != nil {
 		return nil, SiteStatsOut{}, err
 	}
@@ -337,10 +345,11 @@ func (t *tools) siteStats(ctx context.Context, _ *sdk.CallToolRequest, in SiteSt
 // ---- breakdown ----
 
 type BreakdownIn struct {
-	Site  string `json:"site" jsonschema:"site id, name or domain"`
-	Dim   string `json:"dim" jsonschema:"page, ref, country, region, device, browser, os, event, utm_source or utm_campaign"`
-	Range string `json:"range,omitempty" jsonschema:"24h, 7d, 30d or 90d; default 7d"`
-	Limit int    `json:"limit,omitempty" jsonschema:"1-500, default 100"`
+	Site    string            `json:"site" jsonschema:"site id, name or domain"`
+	Dim     string            `json:"dim" jsonschema:"page, ref, country, region, device, browser, os, event, utm_source or utm_campaign"`
+	Range   string            `json:"range,omitempty" jsonschema:"24h, 7d, 30d or 90d; default 7d"`
+	Limit   int               `json:"limit,omitempty" jsonschema:"1-500, default 100"`
+	Filters map[string]string `json:"filters,omitempty" jsonschema:"narrow to visitors matching every entry, dimension to key; see site_stats"`
 }
 
 type BreakdownOut struct {
@@ -390,7 +399,12 @@ func (t *tools) breakdown(ctx context.Context, _ *sdk.CallToolRequest, in Breakd
 	if limit > 500 {
 		limit = 500
 	}
-	rows, err := t.st.Stats.Breakdown(ctx, s.ID, dim, rng, t.st.Now(), limit)
+	var rows []stats.Row
+	if f := t.filters(in.Filters); len(f) > 0 {
+		rows, err = t.st.Stats.FilteredBreakdown(ctx, s.ID, dim, rng, t.st.Now(), limit, f, t.retention(ctx))
+	} else {
+		rows, err = t.st.Stats.Breakdown(ctx, s.ID, dim, rng, t.st.Now(), limit)
+	}
 	if err != nil {
 		return nil, BreakdownOut{}, err
 	}
@@ -517,6 +531,24 @@ func (t *tools) revenue(ctx context.Context, _ *sdk.CallToolRequest, in RevenueI
 		}
 	}
 	return nil, out, nil
+}
+
+func (t *tools) filters(in map[string]string) stats.Filters {
+	f := stats.Filters{}
+	for dim, key := range in {
+		dim = strings.ToLower(strings.TrimSpace(dim))
+		if stats.ValidDim(dim) && key != "Other" {
+			f[dim] = key
+		}
+	}
+	return f
+}
+
+func (t *tools) retention(ctx context.Context) int {
+	if t.st.RetentionDays != nil {
+		return t.st.RetentionDays(ctx)
+	}
+	return 7
 }
 
 func boolPtr(b bool) *bool { return &b }

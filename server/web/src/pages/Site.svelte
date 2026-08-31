@@ -1,6 +1,6 @@
 <script lang="ts">
   // Per-site dashboard: metrics, chart, breakdowns, world map, settings.
-  import { api, googleConnectURL, polarApi, RANGES, refIconURL, siteIconURL, type Dim, type GoogleStatus, type Live, type PolarStatus, type Range, type Revenue, type RevenueDim, type Row, type SearchTerm, type Site, type Summary } from '../lib/api'
+  import { api, googleConnectURL, polarApi, RANGES, refIconURL, siteIconURL, type Dim, type Filters, type GoogleStatus, type Live, type PolarStatus, type Range, type Revenue, type RevenueDim, type Row, type SearchTerm, type Site, type Summary } from '../lib/api'
   import { countryName, flag, fmtDelta, fmtMoney, fmtNum, fmtRatio } from '../lib/format'
   import { pageIn, panel } from '../lib/motion'
   import Icon from '../lib/ui/Icon.svelte'
@@ -20,6 +20,45 @@
   let live = $state(0)
   let range = $state<Range>('7d')
   let error = $state('')
+  // Click-to-filter: dimension to key, mirrored into the URL so back and
+  // share work. Filtered views come from raw events, so the server may
+  // truncate them to the retention window.
+  const DIMS: Dim[] = ['page', 'ref', 'country', 'region', 'device', 'browser', 'os', 'event', 'utm_source', 'utm_campaign']
+  function filtersFromURL(): Filters {
+    const q = new URLSearchParams(location.search)
+    const f: Filters = {}
+    for (const d of DIMS) if (q.has(d)) f[d] = q.get(d) ?? ''
+    return f
+  }
+  let filters = $state<Filters>(filtersFromURL())
+  const hasFilters = $derived(Object.keys(filters).length > 0)
+  function setFilters(next: Filters) {
+    filters = next
+    const q = new URLSearchParams(location.search)
+    for (const d of DIMS) q.delete(d)
+    for (const [d, k] of Object.entries(next)) if (k !== undefined) q.set(d, k)
+    const s = q.toString()
+    history.pushState(null, '', location.pathname + (s ? '?' + s : ''))
+  }
+  function toggleFilter(dim: Dim, key: string) {
+    const next = { ...filters }
+    if (next[dim] === key) delete next[dim]
+    else next[dim] = key
+    setFilters(next)
+  }
+  const select = (dim: Dim) => (r: BarRow) => toggleFilter(dim, r.key === '∅' ? '' : r.key === 'direct' ? '' : r.key === 'XX' ? '' : r.key)
+  $effect(() => {
+    const onPop = () => (filters = filtersFromURL())
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  })
+  const filterLabel = (dim: Dim, key: string) =>
+    dim === 'country' ? countryName(key) || 'Unknown' : dim === 'ref' ? key || 'Direct' : key || 'Unknown'
+  const FILTER_DIM: Record<Dim, string> = {
+    page: 'Page', ref: 'Referrer', utm_source: 'Source', utm_campaign: 'Campaign', country: 'Country', region: 'Region',
+    browser: 'Browser', device: 'Device', os: 'OS', event: 'Event',
+  }
+  const selectedKey = (dim: Dim) => (filters[dim] === undefined ? undefined : filters[dim] === '' ? (dim === 'ref' ? 'direct' : dim === 'country' ? 'XX' : '∅') : filters[dim])
   let settingsOpen = $state(false)
   let copied = $state(false)
   // The map pulls in MapLibre; load it only once the dashboard is up.
@@ -182,7 +221,7 @@
 
   async function load() {
     try {
-      const r = await api.stats(id, range)
+      const r = await api.stats(id, range, filters)
       site = r.site
       stats = r.stats
       live = r.live
@@ -194,6 +233,7 @@
   }
   $effect(() => {
     range
+    filters
     load()
   })
   $effect(() => {
@@ -252,7 +292,7 @@
       return
     }
     api
-      .breakdown(id, dim, range)
+      .breakdown(id, dim, range, filters)
       .then((r) => (modalRows = toRows(dim, r.rows)))
       .catch((e: any) => (error = e.message))
   }
@@ -415,7 +455,7 @@
       <MetricStat label="Visitors" value={fmtNum(stats.totals.visitors)} delta={fmtDelta(stats.totals.visitors, stats.previous.visitors)} />
       <MetricStat label="Page views" value={fmtNum(stats.totals.pageviews)} delta={fmtDelta(stats.totals.pageviews, stats.previous.pageviews)} />
       <MetricStat label="Views / visitor" value={fmtRatio(stats.totals.pageviews, stats.totals.visitors)} />
-      {#if revenue}
+      {#if revenue && !hasFilters}
         <div class="group">
           <MetricStat label="Revenue" value={money(revenue.totals.revenue)} delta={fmtDelta(revenue.totals.revenue, revenue.previous.revenue)} />
           <MetricStat label="Orders" value={fmtNum(revenue.totals.orders)} delta={fmtDelta(revenue.totals.orders, revenue.previous.orders)} />
@@ -425,12 +465,27 @@
     </div>
   </div>
 
+  {#if hasFilters}
+    <div class="filters" transition:panel>
+      <span class="filters-label">Showing visitors who match</span>
+      {#each Object.entries(filters) as [dim, key] (dim)}
+        <button type="button" class="chip" onclick={() => toggleFilter(dim as Dim, key ?? '')} title="Remove filter">
+          <span class="chip-dim">{FILTER_DIM[dim as Dim]}</span>{filterLabel(dim as Dim, key ?? '')}<span class="chip-x">×</span>
+        </button>
+      {/each}
+      <button type="button" class="plain" onclick={() => setFilters({})}>Clear</button>
+      <span class="filters-note">
+        {#if stats.truncated}Filters read raw events, kept {stats.retention_days} days, so this range is cut short. Raise retention in Settings to filter further back.{:else}Revenue and search terms cannot be filtered and are hidden.{/if}
+      </span>
+    </div>
+  {/if}
+
   {#key stats.range}
     <div in:pageIn class="stack">
-      <AreaChart series={stats.series} markers={stats.markers} bucket={stats.bucket} {range} revenue={revenueSeries} currency={revenue?.currency ?? ''} />
+      <AreaChart series={stats.series} markers={stats.markers} bucket={stats.bucket} {range} revenue={hasFilters ? [] : revenueSeries} currency={revenue?.currency ?? ''} />
 
       <div class="grid">
-        {#if revenue}
+        {#if revenue && !hasFilters}
           <div class="wide">
           <BarList
             title="Revenue"
@@ -446,15 +501,17 @@
           </div>
         {/if}
         <Realtime minutes={liveData?.minutes ?? Array(30).fill(0)} total={liveData?.total_30m ?? 0} onmore={() => { mapView = 'live'; document.querySelector('.map-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }} />
-        {#if google?.connected}
+        {#if google?.connected && !hasFilters}
           <BarList title="Search terms" rows={termRows.slice(0, TOP_TERMS)} empty={range === '24h' ? 'Google reports search terms two to three days late' : 'No Google search terms for this range yet'} onmore={more('search')} />
         {/if}
-        <BarList title="Pages" rows={pages} empty="No page views yet" onmore={more('page')} />
+        <BarList title="Pages" rows={pages} empty="No page views yet" onmore={more('page')} onselect={select('page')} selected={selectedKey('page')} />
         <BarList
           title="Sources"
           rows={sources}
           empty={sourceTab === 'ref' ? 'No referrers yet' : sourceTab === 'utm_source' ? 'No utm_source or ?ref= tags seen' : 'No utm_campaign tags seen'}
           onmore={more(sourceTab)}
+          onselect={select(sourceTab)}
+          selected={selectedKey(sourceTab)}
           tabs={[{ value: 'ref', label: 'Referrer' }, { value: 'utm_source', label: 'Source' }, { value: 'utm_campaign', label: 'Campaign' }]}
           tab={sourceTab}
           ontab={(v) => (sourceTab = v)}
@@ -466,6 +523,8 @@
           rows={locations}
           empty={locationTab === 'country' ? 'No locations yet' : 'No regions yet'}
           onmore={more(locationTab)}
+          onselect={select(locationTab)}
+          selected={selectedKey(locationTab)}
           tabs={[{ value: 'country', label: 'Countries' }, { value: 'region', label: 'Regions' }]}
           tab={locationTab}
           ontab={(v) => (locationTab = v)}
@@ -474,6 +533,8 @@
           title="Devices"
           rows={devices}
           onmore={more(deviceTab)}
+          onselect={select(deviceTab)}
+          selected={selectedKey(deviceTab)}
           tabs={[{ value: 'browser', label: 'Browsers' }, { value: 'os', label: 'OS' }, { value: 'device', label: 'Devices' }]}
           tab={deviceTab}
           ontab={(v) => (deviceTab = v)}
@@ -481,7 +542,7 @@
           {#snippet icon(r)}<BrandIcon kind={deviceTab} name={r.key} />{/snippet}
         </BarList>
         {#if events.length > 0}
-          <BarList title="Events" rows={events} onmore={more('event')} />
+          <BarList title="Events" rows={events} onmore={more('event')} onselect={select('event')} selected={selectedKey('event')} />
         {/if}
       </div>
 
@@ -562,6 +623,14 @@
   .prop:hover { box-shadow: inset 0 0 0 1px var(--up-border-control); }
   .prop:disabled { opacity: 0.5; cursor: default; }
 
+  .filters { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: -12px; }
+  .filters-label { font: var(--up-type-meta); color: var(--up-text-muted); }
+  .chip { display: inline-flex; align-items: center; gap: 6px; font: var(--up-type-meta); color: var(--up-ink); background: var(--up-accent-tint); border: none; border-radius: var(--up-radius-pill); padding: 4px 8px 4px 10px; cursor: pointer; }
+  .chip:hover { box-shadow: inset 0 0 0 1px var(--up-accent); }
+  .chip-dim { color: var(--up-text-muted); }
+  .chip-x { color: var(--up-text-muted); font-size: 14px; line-height: 1; }
+  .filters .plain { margin-left: 4px; }
+  .filters-note { font: var(--up-type-meta); color: var(--up-text-muted); width: 100%; }
   .strip { display: flex; align-items: flex-start; }
   .metrics { display: flex; gap: 28px; flex-wrap: nowrap; }
   .group { display: flex; gap: 28px; padding-left: 28px; border-left: 1px solid var(--up-border-hairline); }

@@ -28,6 +28,16 @@ export interface Marker {
   visitors: number
 }
 
+/** Dimension to key. An empty value is a real filter (direct, unknown). */
+export type Filters = Partial<Record<Dim, string>>
+
+export function filterQuery(filters: Filters): string {
+  const q = new URLSearchParams()
+  for (const [dim, key] of Object.entries(filters)) if (key !== undefined) q.set(dim, key)
+  const s = q.toString()
+  return s ? '&' + s : ''
+}
+
 export interface Summary {
   range: Range
   from: string
@@ -38,6 +48,9 @@ export interface Summary {
   series: Point[]
   markers: Marker[]
   breakdowns: Record<Dim, Row[]>
+  filters?: Filters
+  truncated?: boolean
+  retention_days?: number
 }
 
 export interface Live {
@@ -221,8 +234,8 @@ export const api = {
   reorderSites: (ids: string[]) => request<{ sites: Site[] }>('POST', '/api/v1/sites/reorder', { ids }),
   refreshFavicon: (id: string) => request<Site>('POST', `/api/v1/sites/${id}/refresh-favicon`),
   live: (id: string) => request<Live>('GET', `/api/v1/sites/${id}/live`),
-  breakdown: (id: string, dim: Dim, range: Range) => request<{ dim: Dim; range: Range; rows: Row[] }>('GET', `/api/v1/sites/${id}/breakdown?dim=${dim}&range=${range}&limit=500`),
-  stats: (id: string, range: Range) => request<{ site: Site; live: number; stats: Summary }>('GET', `/api/v1/sites/${id}/stats?range=${range}`),
+  breakdown: (id: string, dim: Dim, range: Range, filters: Filters = {}) => request<{ dim: Dim; range: Range; rows: Row[] }>('GET', `/api/v1/sites/${id}/breakdown?dim=${dim}&range=${range}&limit=500${filterQuery(filters)}`),
+  stats: (id: string, range: Range, filters: Filters = {}) => request<{ site: Site; live: number; stats: Summary }>('GET', `/api/v1/sites/${id}/stats?range=${range}${filterQuery(filters)}`),
   status: () => request<Status>('GET', '/api/v1/status'),
   theme: () => request<{ accent: string; title: string }>('GET', '/api/v1/theme'),
   settings: () => request<GeneralSettings>('GET', '/api/v1/settings'),

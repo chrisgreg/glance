@@ -192,6 +192,10 @@ Google strips the query from the referrer, so the only way to see which searches
 
 Only the `webmasters.readonly` scope is requested. The refresh token is stored in the SQLite file alongside everything else; disconnecting revokes it with Google and deletes the stored terms.
 
+## Filtering
+
+Click any row in Pages, Sources, Locations, Devices or Events to narrow the whole dashboard to the visitors who matched it: the chart, the totals and every other card. Filters stack, sit in the URL so they can be shared, and clear with one click. Because filtered views are built from raw events rather than rollups, they only reach back as far as raw events are kept: with the default 7 days, a 30d range under a filter shows the last week and says so. Raise retention in Settings if you want to filter longer ranges. The MCP `site_stats` and `breakdown` tools take the same `filters`.
+
 ## Revenue from Polar
 
 If you sell through [Polar](https://polar.sh), each site can show revenue next to traffic, the way datafa.st does with Stripe. Open a site, **Settings**, **Polar**, and paste an organization access token (Polar dashboard, Settings, Developers; the `orders:read` scope is enough). Glance pulls two years of orders, then reconciles once a day. Add a webhook in Polar pointing at the URL shown in the panel, subscribed to the `order.*` events, and paste its secret so sales appear within seconds. If the organization sells several products, list the product ids that belong to this site so the others are ignored.

@@ -50,6 +50,10 @@ type Summary struct {
 	Series     []Point          `json:"series"`
 	Markers    []Marker         `json:"markers"`
 	Breakdowns map[string][]Row `json:"breakdowns"`
+	// Set on filtered views, which come from raw events rather than rollups.
+	Filters       Filters `json:"filters,omitempty"`
+	Truncated     bool    `json:"truncated,omitempty"` // range reached past retained raw events
+	RetentionDays int     `json:"retention_days,omitempty"`
 }
 
 // Window returns [from, to) for a range ending now, plus the bucket size.

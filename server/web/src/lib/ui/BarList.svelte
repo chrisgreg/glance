@@ -33,6 +33,8 @@
     tab,
     ontab,
     format = fmtNum,
+    onselect,
+    selected,
   }: {
     title?: string
     rows: BarRow[]
@@ -40,6 +42,9 @@
     icon?: Snippet<[BarRow]>
     bare?: boolean
     format?: (v: number) => string
+    /** Click a row to filter by it. Rows keyed "Other" are a fold and stay inert. */
+    onselect?: (row: BarRow) => void
+    selected?: string
     onmore?: () => void
     tabs?: { value: T; label: string }[]
     tab?: T
@@ -73,7 +78,20 @@
     {:else}
       <div class="rows">
         {#each rows as r, i (r.key)}
-          <div class="row" title={r.title ?? r.label} animate:flip={{ duration: dur(220), easing: cubicOut }} in:fade={{ duration: dur(160), delay: dur(Math.min(i, 10) * 25) }}>
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <svelte:element
+            this={onselect && r.key !== 'Other' ? 'button' : 'div'}
+            type={onselect && r.key !== 'Other' ? 'button' : undefined}
+            class="row"
+            role={onselect && r.key !== 'Other' ? undefined : 'listitem'}
+            class:clickable={onselect && r.key !== 'Other'}
+            class:selected={selected !== undefined && selected === r.key}
+            aria-pressed={onselect && r.key !== 'Other' ? selected === r.key : undefined}
+            title={r.title ?? r.label}
+            animate:flip={{ duration: dur(220), easing: cubicOut }}
+            in:fade={{ duration: dur(160), delay: dur(Math.min(i, 10) * 25) }}
+            onclick={onselect && r.key !== 'Other' ? () => onselect(r) : undefined}
+          >
             <div class="fill" style="width: {Math.round((r.value / top) * 100)}%; animation-delay: {dur(Math.min(i, 10) * 25)}ms"></div>
             <div class="left">
               {#if icon}{@render icon(r)}{/if}
@@ -81,7 +99,7 @@
               <span class="label">{r.label}</span>
             </div>
             <div class="value">{format(r.value)}</div>
-          </div>
+          </svelte:element>
         {/each}
       </div>
     {/if}
@@ -97,7 +115,10 @@
   .expand { display: inline-flex; background: none; border: none; padding: 2px; cursor: pointer; color: var(--up-text-faint); border-radius: 4px; }
   .expand:hover { color: var(--up-ink); background: var(--up-bg-hover); }
   .rows { display: flex; flex-direction: column; gap: 6px; }
-  .row { position: relative; display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 6px 10px; border-radius: var(--up-radius-row, 6px); overflow: hidden; }
+  .row { position: relative; display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 6px 10px; border-radius: var(--up-radius-row, 6px); overflow: hidden; width: 100%; text-align: left; background: none; border: none; color: inherit; font: inherit; }
+  .row.clickable { cursor: pointer; }
+  .row.clickable:hover { box-shadow: inset 0 0 0 1px var(--up-border-control); }
+  .row.selected { box-shadow: inset 0 0 0 1.5px var(--up-accent); }
   .fill {
     position: absolute; left: 0; top: 0; bottom: 0;
     background: var(--up-accent-tint);
