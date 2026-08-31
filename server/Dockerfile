@@ -15,7 +15,7 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 COPY --from=web /internal/web/dist ./internal/web/dist
-ARG VERSION=0.1.0
+ARG VERSION=dev
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X github.com/chrisgreg/glance/server/internal/api.Version=${VERSION}" -o /glance ./cmd/glance
 
 # ---- runtime: binary + CA certificates only ----

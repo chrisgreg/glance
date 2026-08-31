@@ -6,6 +6,7 @@
 <p align="center">
   <img src="https://img.shields.io/github/go-mod/go-version/chrisgreg/glance?filename=server%2Fgo.mod" alt="Go version" />
   <img src="https://img.shields.io/github/license/chrisgreg/glance" alt="License" />
+  <img src="https://github.com/chrisgreg/glance/actions/workflows/ci.yml/badge.svg" alt="CI" />
 </p>
 
 A tiny, self-hosted web analytics service. The useful stuff at a glance: visitors, page views, top pages, referrers, countries, devices and simple custom events. Not a product analytics platform.
@@ -36,9 +37,11 @@ The snippet posts one small JSON body per page view (site id, URL, referrer, scr
 git clone https://github.com/chrisgreg/glance && cd glance
 cp .env.example .env          # set GLANCE_ADMIN_USER and GLANCE_ADMIN_PASSWORD
 mkdir -p data && chown 1000:1000 data   # Linux hosts only; the container runs as uid 1000
-docker compose up -d --build
+docker compose up -d --build   # or drop --build to pull ghcr.io/chrisgreg/glance
 open http://localhost:8082
 ```
+
+Prebuilt images are published to `ghcr.io/chrisgreg/glance` on every release: `latest`, `1`, `1.0`, `1.0.0` and so on for linux/amd64 and linux/arm64.
 
 Add a website, click **Tracking code**, and paste the snippet before `</head>`. Data appears as soon as you open the dashboard.
 
@@ -114,7 +117,7 @@ The gear in the header opens `/settings`:
 
 ## MCP (for AI agents)
 
-Glance speaks the [Model Context Protocol](https://modelcontextprotocol.io) at `/mcp` (Streamable HTTP), read-only. Point the agent you already use at it and ask things like *"how are my sites doing this week?"*, *"did anything spike on uini.io in the last month?"* or *"where is chrisgregori.dev's traffic coming from?"*. There is no LLM inside Glance; it serves structured numbers plus small computed signals so the agent does not have to do arithmetic on long series.
+Glance speaks the [Model Context Protocol](https://modelcontextprotocol.io) at `/mcp` (Streamable HTTP), read-only. Point the agent you already use at it and ask things like *"how are my sites doing this week?"*, *"did anything spike on example.com in the last month?"* or *"where is example.com's traffic coming from?"*. There is no LLM inside Glance; it serves structured numbers plus small computed signals so the agent does not have to do arithmetic on long series.
 
 | Tool | Returns |
 | --- | --- |
@@ -132,6 +135,14 @@ claude mcp add --transport http glance https://glance.example.com/mcp --header "
 ```
 
 Any client that supports Streamable HTTP with a custom header can connect the same way.
+
+Things to ask once it is connected:
+
+- *"Give me an overview of all my sites for the last 30 days."*
+- *"Which referrer sent the most visitors to example.com this week, and is it growing?"*
+- *"Show me example.com's traffic from Germany over the last month."* (uses `filters`)
+- *"What did people search on Google to find example.com?"* (needs [Search Console](#google-search-terms))
+- *"How much revenue came from Product Hunt visitors?"* (needs [Polar](#revenue-from-polar))
 
 ## API
 
@@ -237,6 +248,10 @@ make build                                                                # bin/
 ```
 
 Requires Go 1.27 and Node 24 (see `.tool-versions`). The SQLite driver is pure Go, so `CGO_ENABLED=0` builds work everywhere. The Go tests cover ingest through rollup to stats with a fixed clock, day-scoped hashing, the user-agent table, timezone mapping, the SSRF guard, favicon parsing, the MCP tools over a real client, tokens and settings.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Releases are listed in [CHANGELOG.md](CHANGELOG.md); security reports go through [SECURITY.md](SECURITY.md).
 
 ## Licence
 

@@ -35,7 +35,7 @@ import (
 )
 
 // Version is the server version, overridden at build time via -ldflags.
-var Version = "0.1.0"
+var Version = "dev"
 
 //go:embed glance.js
 var snippet []byte

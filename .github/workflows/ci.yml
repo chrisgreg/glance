@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    name: Go
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+      - name: Vet
+        working-directory: server
+        run: go vet ./...
+      - name: Test
+        working-directory: server
+        run: go test -race ./...
+
+  web:
+    name: Web
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .tool-versions
+          cache: npm
+          cache-dependency-path: server/web/package-lock.json
+      - working-directory: server/web
+        run: npm ci
+      - name: Check
+        working-directory: server/web
+        run: npm run check
+      - name: Test
+        working-directory: server/web
+        run: npx vitest run
+      - name: Build
+        working-directory: server/web
+        run: npm run build
+
+  docker:
+    name: Docker build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: server
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
