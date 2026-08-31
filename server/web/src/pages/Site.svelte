@@ -287,6 +287,7 @@
     <span class="domain">{site.domain}</span>
     {#if live > 0}<span class="live"><span class="dot"></span>{live} online</span>{/if}
     <span class="spacer"></span>
+    <div class="ranges"><Segment options={RANGES.map((r) => ({ value: r, label: r }))} value={range} gap={14} onchange={(r) => (range = r)} /></div>
     <button type="button" class="plain" class:on={settingsOpen} onclick={() => (settingsOpen = !settingsOpen)}>Settings</button>
   </div>
 
@@ -422,7 +423,6 @@
         </div>
       {/if}
     </div>
-    <div class="ranges"><Segment options={RANGES.map((r) => ({ value: r, label: r }))} value={range} gap={16} onchange={(r) => (range = r)} /></div>
   </div>
 
   {#key stats.range}
@@ -525,7 +525,8 @@
 
 <style>
   .modal-search { position: sticky; top: 0; background: var(--up-bg); padding: 4px 0 12px; z-index: 1; }
-  .title { display: flex; align-items: center; gap: 10px; margin-top: -12px; }
+  .title { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
+  .title .ranges { margin-right: 22px; }
   .name { font: var(--up-type-row-title); }
   .domain { font: var(--up-type-meta); color: var(--up-text-muted); }
   .live { display: flex; align-items: center; gap: 6px; font: var(--up-type-meta); color: var(--up-text-muted); margin-left: 6px; }
@@ -559,10 +560,9 @@
   .prop:hover { box-shadow: inset 0 0 0 1px var(--up-border-control); }
   .prop:disabled { opacity: 0.5; cursor: default; }
 
-  .strip { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; }
-  .metrics { display: flex; gap: 36px; flex-wrap: wrap; row-gap: 20px; }
-  .group { display: flex; gap: 36px; padding-left: 36px; border-left: 1px solid var(--up-border-hairline); }
-  .ranges { padding-top: 4px; flex-shrink: 0; }
+  .strip { display: flex; align-items: flex-start; }
+  .metrics { display: flex; gap: 28px; flex-wrap: nowrap; }
+  .group { display: flex; gap: 28px; padding-left: 28px; border-left: 1px solid var(--up-border-hairline); }
   .stack { display: flex; flex-direction: column; gap: 36px; }
   .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
   .wide { grid-column: 1 / -1; }
@@ -575,8 +575,9 @@
   .bad { font: var(--up-type-meta); color: var(--up-degraded-strong); }
   @media (max-width: 600px) {
     .grid { grid-template-columns: 1fr; }
-    .strip { flex-direction: column; align-items: flex-start; }
-    .metrics { gap: 24px; }
+    .title { flex-wrap: wrap; }
+    .title .ranges { margin-right: 0; width: 100%; order: 9; }
+    .metrics { gap: 24px; flex-wrap: wrap; row-gap: 16px; }
     .group { gap: 24px; padding-left: 0; border-left: none; width: 100%; }
     .setting { flex-direction: column; align-items: flex-start; gap: 8px; }
     .ctl { width: 100%; }

@@ -121,7 +121,7 @@ button { font: inherit; }
 :focus-visible { outline: 2px solid var(--up-accent-line); outline-offset: 3px; border-radius: 4px; }
 h1, h2, h3, p { margin: 0; }
 
-.page { max-width: var(--up-page-max); margin: 0 auto; padding: 72px var(--up-page-pad) 64px; display: flex; flex-direction: column; gap: var(--up-space-6); }
+.page { max-width: var(--up-page-max); margin: 0 auto; padding: 40px var(--up-page-pad) 64px; display: flex; flex-direction: column; gap: var(--up-space-6); }
 .muted { color: var(--up-text-muted); }
 .secondary { color: var(--up-text-secondary); }
 .faint { color: var(--up-text-faint); }
