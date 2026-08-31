@@ -50,6 +50,7 @@ export interface Summary {
   breakdowns: Record<Dim, Row[]>
   filters?: Filters
   truncated?: boolean
+  previous_unavailable?: boolean
   retention_days?: number
 }
 

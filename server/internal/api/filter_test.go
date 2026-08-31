@@ -77,6 +77,9 @@ func TestFilteredStats(t *testing.T) {
 	if r := find(sum, "event", "signup"); r.Pageviews != 1 {
 		t.Fatalf("events under filter: %+v", sum.Breakdowns["event"])
 	}
+	if !sum.PreviousUnavailable {
+		t.Fatalf("7d filtered with 7d retention cannot compare with the week before")
+	}
 	if len(sum.Series) != 7*24 || sum.Truncated {
 		t.Fatalf("7d filtered series: %d points, truncated=%v", len(sum.Series), sum.Truncated)
 	}

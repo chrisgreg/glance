@@ -9,7 +9,7 @@ release with the matching section of this file as its notes.
 
 ## [Unreleased]
 
-## [1.0.0] - 2026-09-04
+## [1.0.0] - 2026-08-31
 
 First public release.
 

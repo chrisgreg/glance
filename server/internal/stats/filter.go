@@ -99,10 +99,10 @@ func (s *Store) FilteredSummary(ctx context.Context, siteID, rng string, now tim
 	}
 	// The previous window is only comparable when it is fully retained.
 	span := to.Sub(from)
-	if !from.Add(-span).Before(floor) {
-		if out.Previous, err = s.filteredTotals(ctx, siteID, from.Add(-span), from, f); err != nil {
-			return out, err
-		}
+	if from.Add(-span).Before(floor) {
+		out.PreviousUnavailable = true
+	} else if out.Previous, err = s.filteredTotals(ctx, siteID, from.Add(-span), from, f); err != nil {
+		return out, err
 	}
 	for _, dim := range Dims {
 		if out.Breakdowns[dim], err = s.filteredBreakdown(ctx, siteID, dim, from, to, top, f); err != nil {

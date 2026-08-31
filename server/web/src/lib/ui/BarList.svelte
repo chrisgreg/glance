@@ -83,7 +83,6 @@
             this={onselect && r.key !== 'Other' ? 'button' : 'div'}
             type={onselect && r.key !== 'Other' ? 'button' : undefined}
             class="row"
-            role={onselect && r.key !== 'Other' ? undefined : 'listitem'}
             class:clickable={onselect && r.key !== 'Other'}
             class:selected={selected !== undefined && selected === r.key}
             aria-pressed={onselect && r.key !== 'Other' ? selected === r.key : undefined}

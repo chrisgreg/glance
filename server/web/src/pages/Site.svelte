@@ -452,8 +452,8 @@
 
   <div class="strip">
     <div class="metrics">
-      <MetricStat label="Visitors" value={fmtNum(stats.totals.visitors)} delta={fmtDelta(stats.totals.visitors, stats.previous.visitors)} />
-      <MetricStat label="Page views" value={fmtNum(stats.totals.pageviews)} delta={fmtDelta(stats.totals.pageviews, stats.previous.pageviews)} />
+      <MetricStat label="Visitors" value={fmtNum(stats.totals.visitors)} delta={stats.previous_unavailable ? '' : fmtDelta(stats.totals.visitors, stats.previous.visitors)} />
+      <MetricStat label="Page views" value={fmtNum(stats.totals.pageviews)} delta={stats.previous_unavailable ? '' : fmtDelta(stats.totals.pageviews, stats.previous.pageviews)} />
       <MetricStat label="Views / visitor" value={fmtRatio(stats.totals.pageviews, stats.totals.visitors)} />
       {#if revenue && !hasFilters}
         <div class="group">
@@ -475,7 +475,7 @@
       {/each}
       <button type="button" class="plain" onclick={() => setFilters({})}>Clear</button>
       <span class="filters-note">
-        {#if stats.truncated}Filters read raw events, kept {stats.retention_days} days, so this range is cut short. Raise retention in Settings to filter further back.{:else}Revenue and search terms cannot be filtered and are hidden.{/if}
+        {#if stats.truncated}Filters read raw events, kept {stats.retention_days} days, so this range is cut short. Raise retention in Settings to filter further back.{:else}Realtime, revenue and search terms cannot be filtered; revenue and search terms are hidden.{/if}
       </span>
     </div>
   {/if}

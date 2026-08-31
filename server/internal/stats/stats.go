@@ -51,9 +51,12 @@ type Summary struct {
 	Markers    []Marker         `json:"markers"`
 	Breakdowns map[string][]Row `json:"breakdowns"`
 	// Set on filtered views, which come from raw events rather than rollups.
-	Filters       Filters `json:"filters,omitempty"`
-	Truncated     bool    `json:"truncated,omitempty"` // range reached past retained raw events
-	RetentionDays int     `json:"retention_days,omitempty"`
+	Filters   Filters `json:"filters,omitempty"`
+	Truncated bool    `json:"truncated,omitempty"` // range reached past retained raw events
+	// PreviousUnavailable means the comparison window fell outside retained
+	// raw events, so Previous is not a real zero.
+	PreviousUnavailable bool `json:"previous_unavailable,omitempty"`
+	RetentionDays       int  `json:"retention_days,omitempty"`
 }
 
 // Window returns [from, to) for a range ending now, plus the bucket size.
