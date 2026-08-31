@@ -430,9 +430,7 @@
       <AreaChart series={stats.series} markers={stats.markers} bucket={stats.bucket} {range} revenue={revenueSeries} currency={revenue?.currency ?? ''} />
 
       <div class="grid">
-        <div class="wide">
-          <Realtime minutes={liveData?.minutes ?? Array(30).fill(0)} total={liveData?.total_30m ?? 0} onmore={() => { mapView = 'live'; document.querySelector('.map-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }} />
-        </div>
+        <Realtime minutes={liveData?.minutes ?? Array(30).fill(0)} total={liveData?.total_30m ?? 0} onmore={() => { mapView = 'live'; document.querySelector('.map-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }} />
         {#if revenue}
           <div class="wide">
           <BarList
