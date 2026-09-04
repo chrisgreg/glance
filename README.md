@@ -123,10 +123,12 @@ Glance speaks the [Model Context Protocol](https://modelcontextprotocol.io) at `
 | --- | --- |
 | `list_sites` | Every site with visitors this week and last, and visitors online now |
 | `overview` | Every site over a range with the change versus the previous window, a rising/falling/flat trend, spike buckets, the peak, and the top page, referrer, country and events. The right first call |
-| `site_stats` | Full detail for one site: totals, series, top 10 of every breakdown, and the same signals |
-| `breakdown` | The complete list for any dimension, up to 500 rows |
+| `site_stats` | Full detail for one site: totals, series, top 10 of every breakdown, and the same signals. Takes `filters` to narrow to matching visitors |
+| `breakdown` | The complete list for any dimension, up to 500 rows. Takes the same `filters` |
+| `search_terms` | Google search queries from Search Console with clicks, impressions and position, for connected sites |
+| `revenue` | Polar revenue: totals, series, revenue per visitor, attributed versus unattributed orders, and revenue by first-touch referrer, source, campaign, landing page, country and product |
 
-Ranges are `24h`, `7d`, `30d`, `90d`; words like `week` and `month` are accepted. Sites resolve by id, name, domain or a fuzzy match.
+Ranges are `24h`, `7d`, `30d`, `90d`; words like `week` and `month` are accepted. Sites resolve by id, name, domain or a fuzzy match. `filters` is a map of dimension to key, such as `{"ref": "google.com", "country": "GB"}`; filtered answers come from raw events and say so when the range was cut to the retention window. The server instructions explain how revenue attribution is collected and why the unattributed bucket exists, so the agent does not mistake pre-attribution orders for direct sales.
 
 Mint a token in **Settings → MCP** (or set `GLANCE_MCP_TOKEN`) and use it as a bearer token. The admin login works there too. Turning the endpoint off in Settings returns `404 mcp_disabled` to everyone.
 

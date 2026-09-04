@@ -11,6 +11,7 @@ import (
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/chrisgreg/glance/server/internal/polar"
 	"github.com/chrisgreg/glance/server/internal/rollup"
 )
 
@@ -76,7 +77,7 @@ func TestMCPEndToEnd(t *testing.T) {
 	for _, tl := range tools.Tools {
 		names[tl.Name] = true
 	}
-	for _, want := range []string{"list_sites", "overview", "site_stats", "breakdown"} {
+	for _, want := range []string{"list_sites", "overview", "site_stats", "breakdown", "search_terms", "revenue"} {
 		if !names[want] {
 			t.Fatalf("tool %s missing: %v", want, names)
 		}
@@ -101,5 +102,54 @@ func TestMCPEndToEnd(t *testing.T) {
 	res, _ = sess.CallTool(context.Background(), &sdk.CallToolParams{Name: "site_stats", Arguments: map[string]any{"site": "nope.example"}})
 	if res == nil || !res.IsError {
 		t.Fatal("unknown site should be a tool error")
+	}
+
+	// Filters narrow site_stats to matching visitors and are echoed back; with
+	// 7-day retention the previous week is unavailable, so no delta is invented.
+	res, err = sess.CallTool(context.Background(), &sdk.CallToolParams{Name: "site_stats", Arguments: map[string]any{"site": "uini", "filters": map[string]string{"ref": "google.com"}}})
+	if err != nil || res.IsError {
+		t.Fatalf("filtered site_stats: %v %+v", err, res)
+	}
+	out, _ = json.Marshal(res.StructuredContent)
+	if !strings.Contains(string(out), `"filters":{"ref":"google.com"}`) || !strings.Contains(string(out), `"previous_unavailable":true`) || !strings.Contains(string(out), `"visitors_delta_pct":null`) {
+		t.Fatalf("filtered payload: %s", out)
+	}
+	res, err = sess.CallTool(context.Background(), &sdk.CallToolParams{Name: "site_stats", Arguments: map[string]any{"site": "uini", "filters": map[string]string{"ref": "bing.com"}}})
+	if err != nil || res.IsError {
+		t.Fatalf("filtered site_stats: %v %+v", err, res)
+	}
+	out, _ = json.Marshal(res.StructuredContent)
+	if !strings.Contains(string(out), `"totals":{"pageviews":0,"visitors":0}`) {
+		t.Fatalf("bing filter should match nobody: %s", out)
+	}
+
+	// Revenue: not connected reads as such; once orders exist, attribution is counted.
+	res, err = sess.CallTool(context.Background(), &sdk.CallToolParams{Name: "revenue", Arguments: map[string]any{"site": "uini"}})
+	if err != nil || res.IsError {
+		t.Fatalf("revenue: %v %+v", err, res)
+	}
+	out, _ = json.Marshal(res.StructuredContent)
+	if !strings.Contains(string(out), `"connected":false`) {
+		t.Fatalf("revenue before connect: %s", out)
+	}
+	ctx := context.Background()
+	if err := s.Polar.Store.Save(ctx, polar.Connection{SiteID: site.ID, AccessToken: "t"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Polar.Store.UpsertOrders(ctx, site.ID, []polar.Order{
+		{OrderID: "a", CreatedAt: fixed.Add(-time.Hour), Status: "paid", Paid: true, NetAmount: 1000, Currency: "gbp", Ref: "google.com", Landing: "/docs"},
+		{OrderID: "b", CreatedAt: fixed.Add(-2 * time.Hour), Status: "paid", Paid: true, NetAmount: 500, Currency: "gbp"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	res, err = sess.CallTool(context.Background(), &sdk.CallToolParams{Name: "revenue", Arguments: map[string]any{"site": "uini", "range": "7d"}})
+	if err != nil || res.IsError {
+		t.Fatalf("revenue: %v %+v", err, res)
+	}
+	out, _ = json.Marshal(res.StructuredContent)
+	for _, want := range []string{`"connected":true`, `"currency":"gbp"`, `"totals":{"orders":2,"revenue":1500}`, `"visitors":6`, `"revenue_per_visitor":250`, `"attributed_orders":1`, `"unattributed_orders":1`} {
+		if !strings.Contains(string(out), want) {
+			t.Fatalf("revenue payload missing %s: %s", want, out)
+		}
 	}
 }

@@ -45,8 +45,10 @@ func NewServer(st Stores, version string) *sdk.Server {
 			"Every stats result includes a comparison with the equal window before it (delta_pct), a trend (second half of the window vs the first), and spikes (buckets far above the window's mean). " +
 			"Start with overview for all sites at once, then site_stats for detail and breakdown for full lists of pages, referrers, countries, devices, browsers, operating systems or events. " +
 			"Sites can be referred to by id, name or domain. " +
+			"site_stats and breakdown accept filters, a map of dimension to key, which narrows everything to the visitors who matched every entry (a visitor who arrived from google.com and then browsed three pages contributes all three under ref=google.com; an empty ref means direct). Filtered views are computed from raw events, which are kept only for the retention period, so the answer may carry truncated=true with retention_days and previous_unavailable=true; say so rather than presenting a cut-short window as the full range. " +
 			"search_terms lists the Google search queries that brought clicks and impressions, from Search Console; it is only populated for sites the owner has connected, and Google's data trails by two to three days. " +
-			"revenue gives Polar sales for a site: totals, the previous window, a series and revenue attributed to first-touch referrer, source, campaign, landing page, country and product. Amounts are in minor units (cents, pence) of the given currency.",
+			"revenue gives Polar sales for a site: totals, the previous window, a series, revenue per visitor, and revenue attributed to first-touch referrer, source, campaign, landing page, country and product. Revenue is net of discounts and tax, less refunds, in minor units (cents, pence) of the given currency; refunds reduce the day the order was placed. " +
+			"Attribution works like this: the site's snippet records each visitor's first referrer and landing URL in their own browser, the site passes them into the Polar checkout metadata, and Glance normalises them with the same rules as page views, so 'revenue by source' lines up with 'sources'. Orders placed before the site started passing attribution, and orders whose buyer arrived direct, both appear under the empty key; attributed_orders and unattributed_orders say how many of each there are, so do not read an empty-key total as 'direct traffic converts best' when most orders predate attribution.",
 	})
 	t := &tools{st: st}
 	ro := &sdk.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: boolPtr(false)}
@@ -56,13 +58,13 @@ func NewServer(st Stores, version string) *sdk.Server {
 	sdk.AddTool(s, &sdk.Tool{Name: "overview", Title: "Overview of all sites", Annotations: ro,
 		Description: "Totals for every site over a range with the change versus the previous equal window, a trend, spike buckets, and the top page, referrer and country. The best first call for questions like 'how are my sites doing this week'."}, t.overview)
 	sdk.AddTool(s, &sdk.Tool{Name: "site_stats", Title: "Site stats", Annotations: ro,
-		Description: "Full detail for one site over a range: totals, previous window, delta, trend, spikes, the time series (hourly for 24h and 7d, daily for 30d and 90d) and the top 10 of every breakdown."}, t.siteStats)
+		Description: "Full detail for one site over a range: totals, previous window, delta, trend, spikes, the time series (hourly for 24h and 7d, daily for 30d and 90d) and the top 10 of every breakdown. Pass filters to narrow to visitors who matched, e.g. pages viewed by visitors from a referrer, or referrers of visitors who fired an event; filtered answers come from raw events and may be truncated to the retention window."}, t.siteStats)
 	sdk.AddTool(s, &sdk.Tool{Name: "breakdown", Title: "Breakdown", Annotations: ro,
-		Description: "The full list for one dimension of one site over a range, best first: page, ref (referrer host, empty = direct), country (ISO code, empty = unknown), region (time-zone city), device, browser, os, event, utm_source or utm_campaign."}, t.breakdown)
+		Description: "The full list for one dimension of one site over a range, best first: page, ref (referrer host, empty = direct), country (ISO code, empty = unknown), region (time-zone city), device, browser, os, event, utm_source or utm_campaign. Accepts the same filters as site_stats."}, t.breakdown)
 	sdk.AddTool(s, &sdk.Tool{Name: "search_terms", Title: "Google search terms", Annotations: ro,
 		Description: "The Google search queries that sent visitors to one site over a range, from Search Console, most clicked first, with impressions and average position. Empty when the site is not connected."}, t.searchTerms)
 	sdk.AddTool(s, &sdk.Tool{Name: "revenue", Title: "Revenue", Annotations: ro,
-		Description: "Polar revenue for one site over a range: totals and previous window (minor currency units), a per-bucket series, and revenue by first-touch referrer, source, campaign, landing page, country and product. Attribution exists only for orders placed after the site started passing it to checkout. Empty when the site is not connected."}, t.revenue)
+		Description: "Polar revenue for one site over a range: totals and previous window (minor currency units, net of discounts, tax and refunds), a per-bucket series, revenue per visitor, and revenue by first-touch referrer, source, campaign, landing page, country and product. The empty key in a breakdown mixes direct buyers with orders that predate attribution; attributed_orders versus unattributed_orders tells you which dominates. Empty when the site is not connected."}, t.revenue)
 	return s
 }
 
@@ -151,6 +153,9 @@ func pct(now, prev int) *float64 {
 // Analyse derives Signals from a summary.
 func Analyse(sum stats.Summary) Signals {
 	sig := Signals{VisitorsDeltaPct: pct(sum.Totals.Visitors, sum.Previous.Visitors), PageviewsDeltaPct: pct(sum.Totals.Pageviews, sum.Previous.Pageviews), Spikes: []Spike{}, Trend: "flat"}
+	if sum.PreviousUnavailable {
+		sig.VisitorsDeltaPct, sig.PageviewsDeltaPct = nil, nil
+	}
 	if sum.Totals.Visitors > 0 {
 		sig.ViewsPerVisitor = math.Round(float64(sum.Totals.Pageviews)/float64(sum.Totals.Visitors)*100) / 100
 	}
@@ -470,15 +475,19 @@ type RevenueIn struct {
 }
 
 type RevenueOut struct {
-	Site       string                 `json:"site"`
-	Range      string                 `json:"range"`
-	Connected  bool                   `json:"connected"`
-	Currency   string                 `json:"currency" jsonschema:"ISO code; amounts are in its minor unit"`
-	Totals     polar.Totals           `json:"totals"`
-	Previous   polar.Totals           `json:"previous"`
-	DeltaPct   *float64               `json:"revenue_delta_pct"`
-	Series     []polar.Point          `json:"series"`
-	Breakdowns map[string][]polar.Row `json:"breakdowns" jsonschema:"keys ref, source, campaign, landing, country, product; empty key = unattributed"`
+	Site               string                 `json:"site"`
+	Range              string                 `json:"range"`
+	Connected          bool                   `json:"connected"`
+	Currency           string                 `json:"currency" jsonschema:"ISO code; amounts are in its minor unit"`
+	Totals             polar.Totals           `json:"totals" jsonschema:"revenue is net of discounts, tax and refunds"`
+	Previous           polar.Totals           `json:"previous"`
+	DeltaPct           *float64               `json:"revenue_delta_pct"`
+	Visitors           int                    `json:"visitors" jsonschema:"daily-unique visitors over the same range, from the traffic rollups"`
+	RevenuePerVisitor  float64                `json:"revenue_per_visitor" jsonschema:"minor units per visitor; 0 when there were no visitors"`
+	AttributedOrders   int                    `json:"attributed_orders" jsonschema:"paid orders whose checkout carried first-touch attribution"`
+	UnattributedOrders int                    `json:"unattributed_orders" jsonschema:"paid orders with no attribution: direct buyers, or orders placed before the site passed attribution to checkout"`
+	Series             []polar.Point          `json:"series"`
+	Breakdowns         map[string][]polar.Row `json:"breakdowns" jsonschema:"keys ref, source, campaign, landing, country, product; the empty key is unattributed (see unattributed_orders)"`
 }
 
 func (t *tools) revenue(ctx context.Context, _ *sdk.CallToolRequest, in RevenueIn) (*sdk.CallToolResult, RevenueOut, error) {
@@ -528,6 +537,22 @@ func (t *tools) revenue(ctx context.Context, _ *sdk.CallToolRequest, in RevenueI
 	for _, dim := range polar.Dims {
 		if out.Breakdowns[dim], err = t.st.Revenue.Breakdown(ctx, s.ID, dim, from, to, limit); err != nil {
 			return nil, out, err
+		}
+	}
+	// Attributed versus not, read off the referrer breakdown without a limit.
+	if rows, err := t.st.Revenue.Breakdown(ctx, s.ID, "ref", from, to, 10000); err == nil {
+		for _, r := range rows {
+			if r.Key == "" {
+				out.UnattributedOrders += r.Orders
+			} else {
+				out.AttributedOrders += r.Orders
+			}
+		}
+	}
+	if sum, err := t.st.Stats.Summary(ctx, s.ID, rng, t.st.Now(), 1); err == nil {
+		out.Visitors = sum.Totals.Visitors
+		if out.Visitors > 0 {
+			out.RevenuePerVisitor = math.Round(float64(out.Totals.Revenue)/float64(out.Visitors)*100) / 100
 		}
 	}
 	return nil, out, nil
