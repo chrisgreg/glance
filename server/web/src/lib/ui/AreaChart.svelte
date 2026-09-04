@@ -174,7 +174,7 @@
 
 <style>
   /* Break out of the content column to the viewport edges, like the reference. */
-  .wrap { width: 100vw; margin-left: calc(50% - 50vw); display: flex; flex-direction: column; gap: 10px; }
+  .wrap { width: 100vw; max-width: 100vw; margin-left: calc(50% - 50vw); display: flex; flex-direction: column; gap: 10px; overflow: hidden; }
   .chart { position: relative; width: 100%; height: 220px; }
   svg { display: block; overflow: visible; }
   .marker { position: absolute; top: 8px; transform: translateX(-50%); pointer-events: none; }

@@ -108,7 +108,9 @@
 <style>
   .card { border: 1px solid var(--up-border-hairline); border-radius: var(--up-radius-card); padding: 20px 20px 14px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
   .card.bare { border: none; padding: 0; gap: 0; }
-  .head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+  .head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; min-width: 0; }
+  .head > :global(:last-child) { min-width: 0; overflow-x: auto; scrollbar-width: none; }
+  .head > :global(:last-child::-webkit-scrollbar) { display: none; }
   .title-wrap { display: flex; align-items: center; gap: 8px; }
   .title { font: var(--up-type-setting); font-weight: 700; }
   .expand { display: inline-flex; background: none; border: none; padding: 2px; cursor: pointer; color: var(--up-text-faint); border-radius: 4px; }

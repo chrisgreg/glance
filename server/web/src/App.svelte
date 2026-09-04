@@ -92,9 +92,9 @@
 
 <style>
   .page.wide { --up-page-max: 800px; gap: 36px; }
-  header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-width: 0; }
   .brand { color: inherit; }
-  .right { display: flex; align-items: center; gap: 18px; font: var(--up-type-ui); }
+  .right { display: flex; align-items: center; gap: 18px; font: var(--up-type-ui); white-space: nowrap; flex-shrink: 0; }
   .plain { background: none; border: none; padding: 0; cursor: pointer; font: var(--up-type-ui); color: var(--up-text-muted); }
   .plain:hover { color: var(--up-ink); }
   .gear { display: inline-flex; color: var(--up-text-muted); }

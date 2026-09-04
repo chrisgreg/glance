@@ -634,8 +634,11 @@
   .strip { display: flex; align-items: flex-start; }
   .metrics { display: flex; gap: 28px; flex-wrap: nowrap; }
   .group { display: flex; gap: 28px; padding-left: 28px; border-left: 1px solid var(--up-border-hairline); }
-  .stack { display: flex; flex-direction: column; gap: 36px; }
-  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .stack { display: flex; flex-direction: column; gap: 36px; min-width: 0; }
+  .stack > :global(*) { min-width: 0; }
+  /* minmax(0, 1fr): a plain 1fr column grows to fit its widest child, which is how cards escaped the viewport on phones. */
+  .grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; }
+  .grid > :global(*) { min-width: 0; }
   .wide { grid-column: 1 / -1; }
   .map-section { display: flex; flex-direction: column; gap: 12px; }
   .head { display: flex; align-items: baseline; justify-content: space-between; }
@@ -645,8 +648,9 @@
   .map-controls { display: flex; align-items: center; gap: 18px; }
   .bad { font: var(--up-type-meta); color: var(--up-degraded-strong); }
   @media (max-width: 600px) {
-    .grid { grid-template-columns: 1fr; }
-    .title { flex-wrap: wrap; }
+    .grid { grid-template-columns: minmax(0, 1fr); }
+    .title { flex-wrap: wrap; row-gap: 8px; }
+    .strip { min-width: 0; overflow: hidden; }
     .title .ranges { margin-right: 0; width: 100%; order: 9; }
     .metrics { gap: 24px; flex-wrap: wrap; row-gap: 16px; }
     .group { gap: 24px; padding-left: 0; border-left: none; width: 100%; }
