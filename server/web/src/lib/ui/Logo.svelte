@@ -14,4 +14,7 @@
   .mark::after { content: ''; position: absolute; inset: 9px; border-radius: 50%; background: var(--up-bg); }
   .wordmark { font: var(--up-type-wordmark); letter-spacing: 0.02em; }
   .crumb { font: var(--up-type-status-line); color: var(--up-text-faint); }
+  @media (max-width: 600px) {
+    .crumb { display: none; }
+  }
 </style>
