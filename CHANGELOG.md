@@ -9,6 +9,14 @@ release with the matching section of this file as its notes.
 
 ## [Unreleased]
 
+### Added
+
+- `48h` and `180d` date ranges on the dashboard, in the API and over MCP.
+- Four more accent swatches (Sky, Violet, Coral, Teal), and a per-site accent
+  that replaces the account-wide colour while that site's dashboard is open.
+- A default date range per site, remembered once set: the dashboard opens on
+  it, and requests that name no range get it too.
+
 ## [1.0.0] - 2026-08-31
 
 First public release.

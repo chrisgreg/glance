@@ -531,6 +531,19 @@ func (s *Server) reorderSites(w http.ResponseWriter, r *http.Request) {
 	s.listSites(w, r)
 }
 
+// siteRange resolves the range for a site request: the query parameter when
+// given, else the range saved on the site, else the server default. It lets
+// the dashboard open on a site's own default without a second round trip.
+func siteRange(param string, st sites.Site) string {
+	if param != "" {
+		return param
+	}
+	if st.DefaultRange != "" {
+		return st.DefaultRange
+	}
+	return stats.DefaultRange
+}
+
 func (s *Server) siteStats(w http.ResponseWriter, r *http.Request) {
 	st, err := s.Sites.Get(r.Context(), r.PathValue("id"))
 	if err != nil {
@@ -538,10 +551,7 @@ func (s *Server) siteStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.freshen(r.Context())
-	rng := r.URL.Query().Get("range")
-	if rng == "" {
-		rng = "7d"
-	}
+	rng := siteRange(r.URL.Query().Get("range"), st)
 	if !stats.ValidRange(rng) {
 		writeError(w, http.StatusBadRequest, "invalid", "range must be one of "+strings.Join(stats.Ranges, ", "))
 		return
@@ -582,10 +592,7 @@ func (s *Server) siteBreakdown(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := r.URL.Query()
-	rng := q.Get("range")
-	if rng == "" {
-		rng = "7d"
-	}
+	rng := siteRange(q.Get("range"), st)
 	dim := q.Get("dim")
 	if !stats.ValidRange(rng) || !stats.ValidDim(dim) {
 		writeError(w, http.StatusBadRequest, "invalid", "dim must be one of "+strings.Join(stats.Dims, ", ")+" and range one of "+strings.Join(stats.Ranges, ", "))

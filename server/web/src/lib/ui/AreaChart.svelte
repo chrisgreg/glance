@@ -168,7 +168,7 @@
         <span class="pill" style="left: {hx}px">{fmtPoint(hp.t, bucket, range)}</span>
       {/if}
     </div>
-    <span class="edge">{range === '24h' ? 'Now' : 'Today'}</span>
+    <span class="edge">{range === '24h' || range === '48h' ? 'Now' : 'Today'}</span>
   </div>
 </div>
 

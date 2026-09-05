@@ -39,7 +39,7 @@ func TestAnalyse(t *testing.T) {
 }
 
 func TestNormRange(t *testing.T) {
-	for in, want := range map[string]string{"": "7d", "week": "7d", "24H": "24h", "month": "30d", "90d": "90d"} {
+	for in, want := range map[string]string{"": "7d", "week": "7d", "24H": "24h", "month": "30d", "90d": "90d", "2d": "48h", "48h": "48h", "6M": "180d", "180d": "180d"} {
 		if got, err := normRange(in); err != nil || got != want {
 			t.Fatalf("%q: %q %v", in, got, err)
 		}

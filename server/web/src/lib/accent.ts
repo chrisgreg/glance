@@ -38,6 +38,10 @@ export const SWATCHES = [
   { name: 'Mint', hex: '#5FBF9F' },
   { name: 'Blush', hex: '#E88CB0' },
   { name: 'Amber', hex: '#E8B34C' },
+  { name: 'Sky', hex: '#5AA9E6' },
+  { name: 'Violet', hex: '#A87CE8' },
+  { name: 'Coral', hex: '#E8775C' },
+  { name: 'Teal', hex: '#45B5B0' },
 ]
 
 export function isHex(v: string): boolean {
@@ -68,4 +72,36 @@ export function applyAccent(hex: string) {
 export function clearAccent() {
   const root = document.documentElement.style
   for (const k of ['--up-accent', '--up-accent-hover', '--up-accent-line', '--up-accent-tint', '--up-operational', '--up-operational-strong']) root.removeProperty(k)
+}
+
+// Two layers: the account-wide accent, and the per-site colour that replaces
+// it while that site's dashboard is open. The page always shows the override
+// when there is one, so leaving a site restores the global colour.
+let base = DEFAULT_ACCENT
+let override = ''
+
+function render() {
+  applyAccent(override || base)
+}
+
+/** Set the account-wide accent (the one saved in Settings). */
+export function setBaseAccent(hex: string) {
+  base = isHex(hex) ? hex : DEFAULT_ACCENT
+  render()
+}
+
+/** Set the per-site accent, or '' to fall back to the account-wide one. */
+export function setAccentOverride(hex: string) {
+  override = isHex(hex) ? hex : ''
+  render()
+}
+
+/** The accent in force right now, override first. */
+export function currentAccent(): string {
+  return override || base
+}
+
+/** Re-derive the tint family, e.g. after the light/dark theme flips. */
+export function refreshAccent() {
+  render()
 }

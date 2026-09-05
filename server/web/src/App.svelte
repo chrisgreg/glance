@@ -7,7 +7,7 @@
   import Sites from './pages/Sites.svelte'
   import Site from './pages/Site.svelte'
   import Settings from './pages/Settings.svelte'
-  import { applyAccent } from './lib/accent'
+  import { refreshAccent, setBaseAccent } from './lib/accent'
   import { pageIn } from './lib/motion'
 
   let authRequired = $state(false)
@@ -19,13 +19,14 @@
     api
       .theme()
       .then((t) => {
-        applyAccent(t.accent)
+        setBaseAccent(t.accent)
         title = t.title || 'Glance'
       })
       .catch(() => {})
-    // Re-derive the tint family when the theme flips.
+    // Re-derive the tint family when the theme flips, keeping whichever accent
+    // is in force (a site's override outranks the account-wide one).
     const mq = matchMedia('(prefers-color-scheme: dark)')
-    const redo = () => api.theme().then((t) => applyAccent(t.accent)).catch(() => {})
+    const redo = () => refreshAccent()
     mq.addEventListener('change', redo)
     const obs = new MutationObserver(redo)
     obs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
