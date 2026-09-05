@@ -2,12 +2,13 @@
   // General settings: overview, appearance, MCP and API tokens, retention, export.
   import { api, type GeneralSettings, type Status, type Token } from '../lib/api'
   import { fmtNum } from '../lib/format'
-  import { applyAccent, clearAccent, isHex, SWATCHES, DEFAULT_ACCENT } from '../lib/accent'
+  import { isHex, setBaseAccent } from '../lib/accent'
   import { panel, reorder } from '../lib/motion'
   import Input from '../lib/ui/Input.svelte'
   import Button from '../lib/ui/Button.svelte'
   import Switch from '../lib/ui/Switch.svelte'
   import Segment from '../lib/ui/Segment.svelte'
+  import Swatches from '../lib/ui/Swatches.svelte'
   import MetricStat from '../lib/ui/MetricStat.svelte'
 
   let { ontitle }: { ontitle: (t: string) => void } = $props()
@@ -16,7 +17,6 @@
   let tokens = $state<Token[]>([])
   let envToken = $state(false)
   let error = $state('')
-  let custom = $state('')
   let tokenName = $state('')
   let minted = $state<{ name: string; secret: string } | null>(null)
   let copied = $state(false)
@@ -28,7 +28,6 @@
       settings = g
       tokens = tk.tokens
       envToken = tk.env_token_set
-      custom = SWATCHES.some((s) => s.hex === g.accent) ? '' : g.accent
     } catch (e: any) {
       error = e.message
     }
@@ -46,7 +45,7 @@
         .updateSettings(patch)
         .then((g) => {
           settings = g
-          applyAccent(g.accent)
+          setBaseAccent(g.accent)
           ontitle(g.title)
         })
         .catch((e: any) => (error = e.message))
@@ -54,7 +53,7 @@
   }
   function pickAccent(hex: string) {
     if (!isHex(hex)) return
-    applyAccent(hex) // instant preview
+    setBaseAccent(hex) // instant preview
     save({ accent: hex })
   }
   async function mint() {
@@ -104,17 +103,7 @@
         <div class="label">Accent colour</div>
         <div class="hint">Used for the wordmark, links, charts and the map</div>
       </div>
-      <div class="swatches">
-        {#each SWATCHES as sw (sw.hex)}
-          <button type="button" class="swatch" class:on={settings.accent === sw.hex} title={sw.name} aria-label={sw.name} style="background: {sw.hex}; --ring: {sw.hex}" onclick={() => pickAccent(sw.hex)}></button>
-        {/each}
-        <div class="custom">
-          <Input value={custom} placeholder="#7C83E8" aria-label="Custom accent" maxlength={7} oninput={(e) => {
-            custom = e.currentTarget.value.trim()
-            if (isHex(custom)) pickAccent(custom.toUpperCase())
-          }} />
-        </div>
-      </div>
+      <Swatches value={settings.accent} onpick={pickAccent} />
     </div>
     <div class="setting">
       <div class="text">
@@ -217,11 +206,6 @@
   .hint code { font: var(--up-type-code); }
   .mono { font: var(--up-type-code); }
   .ctl { width: 220px; flex-shrink: 0; }
-  .swatches { display: flex; align-items: center; gap: 10px; }
-  .swatch { width: 22px; height: 22px; border-radius: 50%; border: none; cursor: pointer; box-shadow: var(--up-ring-inset); transition: transform 120ms ease-out; }
-  .swatch:hover { transform: scale(1.1); }
-  .swatch.on { box-shadow: 0 0 0 2px var(--up-bg), 0 0 0 3.5px var(--ring); }
-  .custom { width: 110px; margin-left: 6px; }
   .tokens { display: flex; flex-direction: column; gap: 10px; padding-top: 14px; }
   .row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 10px 0; border-top: 1px solid var(--up-border-hairline); }
   .plain { background: none; border: none; padding: 0; cursor: pointer; font: var(--up-type-ui); color: var(--up-text-muted); }

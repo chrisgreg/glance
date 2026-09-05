@@ -152,10 +152,7 @@ func (s *Server) searchTerms(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := r.URL.Query()
-	rng := q.Get("range")
-	if rng == "" {
-		rng = "7d"
-	}
+	rng := siteRange(q.Get("range"), st)
 	if !stats.ValidRange(rng) {
 		writeError(w, http.StatusBadRequest, "invalid", "range must be one of "+strings.Join(stats.Ranges, ", "))
 		return

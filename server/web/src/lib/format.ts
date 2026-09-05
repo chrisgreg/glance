@@ -53,8 +53,15 @@ export function fmtPoint(iso: string, bucket: 'hour' | 'day', range: string): st
 export const fmtDay = (iso: string) => short.format(new Date(iso))
 export const fmtDayHour = (iso: string) => dayHour.format(new Date(iso))
 
-export const RANGE_LABEL: Record<string, string> = { '24h': '24h', '7d': '7d', '30d': '30d', '90d': '90d' }
-export const RANGE_START: Record<string, string> = { '24h': '24 hours ago', '7d': '7 days ago', '30d': '30 days ago', '90d': '90 days ago' }
+export const RANGE_LABEL: Record<string, string> = { '24h': '24h', '48h': '48h', '7d': '7d', '30d': '30d', '90d': '90d', '180d': '180d' }
+export const RANGE_START: Record<string, string> = {
+  '24h': '24 hours ago',
+  '48h': '48 hours ago',
+  '7d': '7 days ago',
+  '30d': '30 days ago',
+  '90d': '90 days ago',
+  '180d': '180 days ago',
+}
 
 type CountryRow = [string, number, number]
 const table = countries as unknown as Record<string, CountryRow>

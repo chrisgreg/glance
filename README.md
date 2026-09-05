@@ -80,12 +80,12 @@ The index lists every site with its favicon, a 14-day sparkline and this week's 
 
 Per site:
 
-- **Visitors, page views, views per visitor** with the change versus the previous equal window, over 24h, 7d, 30d or 90d.
-- **Chart**: hourly for 24h and 7d, daily for 30d and 90d, with the dark tooltip on hover.
+- **Visitors, page views, views per visitor** with the change versus the previous equal window, over 24h, 48h, 7d, 30d, 90d or 180d.
+- **Chart**: hourly for 24h, 48h and 7d, daily for 30d, 90d and 180d, with the dark tooltip on hover.
 - **People in the last 30 minutes** with a per-minute strip.
 - **Tabbed cards**: Pages; Sources as Referrer, Source (`utm_source`, falling back to `?ref=` and `?source=`) or Campaign (`utm_campaign`); Locations as Countries or Regions; Devices as Browsers, OS or Devices; Events. The expand icon beside a title opens the full list with a filter box. Bars grow in when a tab changes.
 - **Live**: a 3D globe of visitors from the last five minutes, dots sized by count, arcs flowing from each country to your home country, refreshed every five seconds. Switch to the range map for the whole window.
-- **Settings** per site: name, domain, home country, refetch favicon.
+- **Settings** per site: name, domain, default date range, accent colour, home country, refetch favicon. The default range is the one the dashboard opens on, and the accent replaces the account-wide colour while you are looking at that site.
 
 ## How it works
 
@@ -128,7 +128,7 @@ Glance speaks the [Model Context Protocol](https://modelcontextprotocol.io) at `
 | `search_terms` | Google search queries from Search Console with clicks, impressions and position, for connected sites |
 | `revenue` | Polar revenue: totals, series, revenue per visitor, attributed versus unattributed orders, and revenue by first-touch referrer, source, campaign, landing page, country and product |
 
-Ranges are `24h`, `7d`, `30d`, `90d`; words like `week` and `month` are accepted. Sites resolve by id, name, domain or a fuzzy match. `filters` is a map of dimension to key, such as `{"ref": "google.com", "country": "GB"}`; filtered answers come from raw events and say so when the range was cut to the retention window. The server instructions explain how revenue attribution is collected and why the unattributed bucket exists, so the agent does not mistake pre-attribution orders for direct sales.
+Ranges are `24h`, `48h`, `7d`, `30d`, `90d`, `180d`; words like `week` and `month` are accepted. Sites resolve by id, name, domain or a fuzzy match. `filters` is a map of dimension to key, such as `{"ref": "google.com", "country": "GB"}`; filtered answers come from raw events and say so when the range was cut to the retention window. The server instructions explain how revenue attribution is collected and why the unattributed bucket exists, so the agent does not mistake pre-attribution orders for direct sales.
 
 Mint a token in **Settings → MCP** (or set `GLANCE_MCP_TOKEN`) and use it as a bearer token. The admin login works there too. Turning the endpoint off in Settings returns `404 mcp_disabled` to everyone.
 

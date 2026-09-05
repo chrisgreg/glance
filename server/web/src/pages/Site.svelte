@@ -1,10 +1,12 @@
 <script lang="ts">
   // Per-site dashboard: metrics, chart, breakdowns, world map, settings.
-  import { api, googleConnectURL, polarApi, RANGES, refIconURL, siteIconURL, type Dim, type Filters, type GoogleStatus, type Live, type PolarStatus, type Range, type Revenue, type RevenueDim, type Row, type SearchTerm, type Site, type Summary } from '../lib/api'
+  import { api, DEFAULT_RANGE, googleConnectURL, isRange, polarApi, RANGES, refIconURL, siteIconURL, type Dim, type Filters, type GoogleStatus, type Live, type PolarStatus, type Range, type Revenue, type RevenueDim, type Row, type SearchTerm, type Site, type Summary } from '../lib/api'
+  import { setAccentOverride } from '../lib/accent'
   import { countryName, flag, fmtDelta, fmtMoney, fmtNum, fmtRatio } from '../lib/format'
   import { pageIn, panel } from '../lib/motion'
   import Icon from '../lib/ui/Icon.svelte'
   import Segment from '../lib/ui/Segment.svelte'
+  import Swatches from '../lib/ui/Swatches.svelte'
   import MetricStat from '../lib/ui/MetricStat.svelte'
   import BarList, { type BarRow } from '../lib/ui/BarList.svelte'
   import AreaChart from '../lib/ui/AreaChart.svelte'
@@ -18,7 +20,10 @@
   let site = $state<Site | null>(null)
   let stats = $state<Summary | null>(null)
   let live = $state(0)
-  let range = $state<Range>('7d')
+  // The dashboard opens on the range saved against the site. The first stats
+  // call leaves the range out and the server answers with the one it used, so
+  // learning the site's default costs no extra round trip.
+  let range = $state<Range | ''>('')
   let error = $state('')
   // Click-to-filter: dimension to key, mirrored into the URL so back and
   // share work. Filtered views come from raw events, so the server may
@@ -85,7 +90,7 @@
     }
   }
   async function loadTerms() {
-    if (!google?.connected) {
+    if (!google?.connected || !range) {
       terms = []
       return
     }
@@ -150,7 +155,7 @@
     }
   }
   async function loadRevenue() {
-    if (!polar?.connected) {
+    if (!polar?.connected || !range) {
       revenue = null
       return
     }
@@ -219,6 +224,11 @@
     })),
   )
 
+  // The window already asked for, so resolving the opening range below does
+  // not fire the same query a second time.
+  let requested = ''
+  const windowKey = () => JSON.stringify([range, filters])
+
   async function load() {
     try {
       const r = await api.stats(id, range, filters)
@@ -227,14 +237,25 @@
       live = r.live
       error = ''
       document.title = `${r.site.name} · Glance`
+      if (!range) {
+        range = isRange(r.stats.range) ? r.stats.range : DEFAULT_RANGE
+        requested = windowKey() // this load already covered it
+      }
     } catch (e: any) {
       error = e.message
     }
   }
   $effect(() => {
-    range
-    filters
+    const key = windowKey()
+    if (key === requested) return
+    requested = key
     load()
+  })
+  // A site's own colour takes over the whole UI while its dashboard is open,
+  // and hands back to the account-wide accent on the way out.
+  $effect(() => {
+    setAccentOverride(site?.accent ?? '')
+    return () => setAccentOverride('')
   })
   $effect(() => {
     const t = setInterval(load, 60_000)
@@ -292,7 +313,7 @@
       return
     }
     api
-      .breakdown(id, dim, range, filters)
+      .breakdown(id, dim, range || DEFAULT_RANGE, filters)
       .then((r) => (modalRows = toRows(dim, r.rows)))
       .catch((e: any) => (error = e.message))
   }
@@ -318,6 +339,16 @@
         .catch((e: any) => (error = e.message))
     }, 400)
   }
+  /** Per-site accent; '' hands the page back to the account-wide colour. */
+  function pickAccent(hex: string) {
+    setAccentOverride(hex) // instant preview
+    save({ accent: hex }, 'accent')
+  }
+  /** The range this dashboard opens on, and the one it switches to now. */
+  function pickDefaultRange(r: Range) {
+    range = r
+    save({ default_range: r }, 'default_range')
+  }
 </script>
 
 {#if site && stats}
@@ -327,7 +358,7 @@
     <span class="domain">{site.domain}</span>
     {#if live > 0}<span class="live"><span class="dot"></span>{live} online</span>{/if}
     <span class="spacer"></span>
-    <div class="ranges"><Segment options={RANGES.map((r) => ({ value: r, label: r }))} value={range} gap={14} onchange={(r) => (range = r)} /></div>
+    <div class="ranges"><Segment options={RANGES.map((r) => ({ value: r, label: r }))} value={range || DEFAULT_RANGE} gap={14} onchange={(r) => (range = r)} /></div>
     <button type="button" class="plain" class:on={settingsOpen} onclick={() => (settingsOpen = !settingsOpen)}>Settings</button>
   </div>
 
@@ -347,6 +378,14 @@
       <div class="setting">
         <div class="text"><div class="label">Domain</div><div class="hint">Events from other hosts are ignored</div></div>
         <div class="ctl"><Input value={site.domain} aria-label="Domain" oninput={(e) => save({ domain: e.currentTarget.value }, 'domain')} /></div>
+      </div>
+      <div class="setting">
+        <div class="text"><div class="label">Default date range</div><div class="hint">The range this dashboard opens on, remembered for {site.name}</div></div>
+        <div class="ranges-setting"><Segment options={RANGES.map((r) => ({ value: r, label: r }))} value={(site.default_range || DEFAULT_RANGE) as Range} gap={14} onchange={pickDefaultRange} /></div>
+      </div>
+      <div class="setting">
+        <div class="text"><div class="label">Accent colour</div><div class="hint">Replaces the account colour while you are looking at this site</div></div>
+        <Swatches value={site.accent} inherit="Account colour" onpick={pickAccent} />
       </div>
       <div class="setting">
         <div class="text"><div class="label">Home country</div><div class="hint">Where the map arcs converge. Blank uses your top country ({countryName(topCountry) || 'none yet'}).</div></div>
@@ -605,6 +644,7 @@
   .hint { font: var(--up-type-meta); color: var(--up-text-muted); }
   .ctl { width: 240px; flex-shrink: 0; }
   .ctl.short { width: 90px; }
+  .ranges-setting { flex-shrink: 0; }
   .code { background: var(--up-surface-dark); border-radius: var(--up-radius-tooltip); padding: 12px 14px; display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
   .snippet { font: var(--up-type-code); color: var(--up-text-on-dark); word-break: break-all; }
   .copy { background: none; border: none; padding: 2px 0; cursor: pointer; font: var(--up-type-small); color: var(--up-operational-strong); flex-shrink: 0; }

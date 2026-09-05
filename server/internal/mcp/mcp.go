@@ -41,7 +41,7 @@ func NewServer(st Stores, version string) *sdk.Server {
 	}
 	s := sdk.NewServer(&sdk.Implementation{Name: "glance", Title: "Glance", Version: version}, &sdk.ServerOptions{
 		Instructions: "Glance is a self-hosted, cookieless web analytics service tracking the owner's websites. These tools are read-only. " +
-			"Ranges are 24h, 7d, 30d or 90d and always end now. Visitors are daily uniques (multi-day totals sum daily uniques); pageviews are raw counts. " +
+			"Ranges are 24h, 48h, 7d, 30d, 90d or 180d and always end now. Visitors are daily uniques (multi-day totals sum daily uniques); pageviews are raw counts. " +
 			"Every stats result includes a comparison with the equal window before it (delta_pct), a trend (second half of the window vs the first), and spikes (buckets far above the window's mean). " +
 			"Start with overview for all sites at once, then site_stats for detail and breakdown for full lists of pages, referrers, countries, devices, browsers, operating systems or events. " +
 			"Sites can be referred to by id, name or domain. " +
@@ -58,7 +58,7 @@ func NewServer(st Stores, version string) *sdk.Server {
 	sdk.AddTool(s, &sdk.Tool{Name: "overview", Title: "Overview of all sites", Annotations: ro,
 		Description: "Totals for every site over a range with the change versus the previous equal window, a trend, spike buckets, and the top page, referrer and country. The best first call for questions like 'how are my sites doing this week'."}, t.overview)
 	sdk.AddTool(s, &sdk.Tool{Name: "site_stats", Title: "Site stats", Annotations: ro,
-		Description: "Full detail for one site over a range: totals, previous window, delta, trend, spikes, the time series (hourly for 24h and 7d, daily for 30d and 90d) and the top 10 of every breakdown. Pass filters to narrow to visitors who matched, e.g. pages viewed by visitors from a referrer, or referrers of visitors who fired an event; filtered answers come from raw events and may be truncated to the retention window."}, t.siteStats)
+		Description: "Full detail for one site over a range: totals, previous window, delta, trend, spikes, the time series (hourly for 24h, 48h and 7d, daily for the longer ranges) and the top 10 of every breakdown. Pass filters to narrow to visitors who matched, e.g. pages viewed by visitors from a referrer, or referrers of visitors who fired an event; filtered answers come from raw events and may be truncated to the retention window."}, t.siteStats)
 	sdk.AddTool(s, &sdk.Tool{Name: "breakdown", Title: "Breakdown", Annotations: ro,
 		Description: "The full list for one dimension of one site over a range, best first: page, ref (referrer host, empty = direct), country (ISO code, empty = unknown), region (time-zone city), device, browser, os, event, utm_source or utm_campaign. Accepts the same filters as site_stats."}, t.breakdown)
 	sdk.AddTool(s, &sdk.Tool{Name: "search_terms", Title: "Google search terms", Annotations: ro,
@@ -108,17 +108,21 @@ func normRange(r string) (string, error) {
 		return "7d", nil
 	case "24h", "1d", "day", "today":
 		return "24h", nil
+	case "48h", "2d", "two days":
+		return "48h", nil
 	case "7d", "week", "1w":
 		return "7d", nil
 	case "30d", "month", "1m":
 		return "30d", nil
 	case "90d", "quarter", "3m":
 		return "90d", nil
+	case "180d", "6m", "half year", "6 months":
+		return "180d", nil
 	}
 	if stats.ValidRange(r) {
 		return r, nil
 	}
-	return "", fmt.Errorf("range must be one of 24h, 7d, 30d, 90d")
+	return "", fmt.Errorf("range must be one of %s", strings.Join(stats.Ranges, ", "))
 }
 
 // ---- analysis ----
@@ -243,7 +247,7 @@ func (t *tools) listSites(ctx context.Context, _ *sdk.CallToolRequest, _ ListSit
 // ---- overview ----
 
 type OverviewIn struct {
-	Range string `json:"range,omitempty" jsonschema:"24h, 7d, 30d or 90d; default 7d"`
+	Range string `json:"range,omitempty" jsonschema:"24h, 48h, 7d, 30d, 90d or 180d; default 7d"`
 }
 
 type SiteOverview struct {
@@ -313,7 +317,7 @@ func (t *tools) overview(ctx context.Context, _ *sdk.CallToolRequest, in Overvie
 
 type SiteStatsIn struct {
 	Site    string            `json:"site" jsonschema:"site id, name or domain"`
-	Range   string            `json:"range,omitempty" jsonschema:"24h, 7d, 30d or 90d; default 7d"`
+	Range   string            `json:"range,omitempty" jsonschema:"24h, 48h, 7d, 30d, 90d or 180d; default 7d"`
 	Filters map[string]string `json:"filters,omitempty" jsonschema:"narrow to visitors matching every entry, dimension to key, e.g. {\"ref\": \"google.com\", \"country\": \"GB\"}; an empty ref means direct. Filtered views come from raw events and only reach back as far as retention, so truncated may be set"`
 }
 
@@ -352,7 +356,7 @@ func (t *tools) siteStats(ctx context.Context, _ *sdk.CallToolRequest, in SiteSt
 type BreakdownIn struct {
 	Site    string            `json:"site" jsonschema:"site id, name or domain"`
 	Dim     string            `json:"dim" jsonschema:"page, ref, country, region, device, browser, os, event, utm_source or utm_campaign"`
-	Range   string            `json:"range,omitempty" jsonschema:"24h, 7d, 30d or 90d; default 7d"`
+	Range   string            `json:"range,omitempty" jsonschema:"24h, 48h, 7d, 30d, 90d or 180d; default 7d"`
 	Limit   int               `json:"limit,omitempty" jsonschema:"1-500, default 100"`
 	Filters map[string]string `json:"filters,omitempty" jsonschema:"narrow to visitors matching every entry, dimension to key; see site_stats"`
 }
@@ -418,7 +422,7 @@ func (t *tools) breakdown(ctx context.Context, _ *sdk.CallToolRequest, in Breakd
 
 type SearchTermsIn struct {
 	Site  string `json:"site" jsonschema:"site id, name or domain"`
-	Range string `json:"range,omitempty" jsonschema:"24h, 7d, 30d or 90d; default 30d. Search Console trails by two to three days so 24h is usually empty"`
+	Range string `json:"range,omitempty" jsonschema:"24h, 48h, 7d, 30d, 90d or 180d; default 30d. Search Console trails by two to three days so 24h is usually empty"`
 	Limit int    `json:"limit,omitempty" jsonschema:"1-500, default 100"`
 }
 
@@ -470,7 +474,7 @@ func (t *tools) searchTerms(ctx context.Context, _ *sdk.CallToolRequest, in Sear
 
 type RevenueIn struct {
 	Site  string `json:"site" jsonschema:"site id, name or domain"`
-	Range string `json:"range,omitempty" jsonschema:"24h, 7d, 30d or 90d; default 30d"`
+	Range string `json:"range,omitempty" jsonschema:"24h, 48h, 7d, 30d, 90d or 180d; default 30d"`
 	Limit int    `json:"limit,omitempty" jsonschema:"rows per breakdown, 1-100, default 10"`
 }
 

@@ -9,7 +9,10 @@ import (
 )
 
 // Ranges the dashboard supports.
-var Ranges = []string{"24h", "7d", "30d", "90d"}
+var Ranges = []string{"24h", "48h", "7d", "30d", "90d", "180d"}
+
+// DefaultRange is used when a request, or a site, names no range.
+const DefaultRange = "7d"
 
 // Point is one bucket of the time series.
 type Point struct {
@@ -66,12 +69,18 @@ func Window(rng string, now time.Time) (from, to time.Time, bucket string) {
 	case "24h":
 		to = now.Truncate(time.Hour).Add(time.Hour)
 		return to.Add(-24 * time.Hour), to, "hour"
+	case "48h":
+		to = now.Truncate(time.Hour).Add(time.Hour)
+		return to.Add(-48 * time.Hour), to, "hour"
 	case "7d":
 		to = now.Truncate(24*time.Hour).AddDate(0, 0, 1)
 		return to.AddDate(0, 0, -7), to, "hour"
 	case "90d":
 		to = now.Truncate(24*time.Hour).AddDate(0, 0, 1)
 		return to.AddDate(0, 0, -90), to, "day"
+	case "180d":
+		to = now.Truncate(24*time.Hour).AddDate(0, 0, 1)
+		return to.AddDate(0, 0, -180), to, "day"
 	default:
 		to = now.Truncate(24*time.Hour).AddDate(0, 0, 1)
 		return to.AddDate(0, 0, -30), to, "day"

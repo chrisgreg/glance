@@ -12,6 +12,7 @@ import (
 
 	"github.com/chrisgreg/glance/server/internal/database"
 	"github.com/chrisgreg/glance/server/internal/ids"
+	"github.com/chrisgreg/glance/server/internal/stats"
 )
 
 // ErrNotFound is returned when a site does not exist.
@@ -26,17 +27,25 @@ type Site struct {
 	Name        string `json:"name"`
 	Domain      string `json:"domain"`
 	HomeCountry string `json:"home_country"`
-	HasFavicon  bool   `json:"has_favicon"`
-	Position    int    `json:"position"`
-	CreatedAt   string `json:"created_at"`
-	UpdatedAt   string `json:"updated_at"`
+	// Accent overrides the account-wide colour on this site's dashboard.
+	// Empty follows the global setting.
+	Accent string `json:"accent"`
+	// DefaultRange is the range this site's dashboard opens on. Empty means
+	// the server default.
+	DefaultRange string `json:"default_range"`
+	HasFavicon   bool   `json:"has_favicon"`
+	Position     int    `json:"position"`
+	CreatedAt    string `json:"created_at"`
+	UpdatedAt    string `json:"updated_at"`
 }
 
 // Input is the writable subset of a site.
 type Input struct {
-	Name        *string `json:"name"`
-	Domain      *string `json:"domain"`
-	HomeCountry *string `json:"home_country"`
+	Name         *string `json:"name"`
+	Domain       *string `json:"domain"`
+	HomeCountry  *string `json:"home_country"`
+	Accent       *string `json:"accent"`
+	DefaultRange *string `json:"default_range"`
 }
 
 // Store persists sites and keeps an in-memory index for the ingest path.
@@ -51,12 +60,12 @@ type Store struct {
 // New returns a Store.
 func New(db *sql.DB) *Store { return &Store{db: db, byID: map[string]Site{}} }
 
-const cols = `id, name, domain, home_country, favicon IS NOT NULL, position, created_at, updated_at`
+const cols = `id, name, domain, home_country, accent, default_range, favicon IS NOT NULL, position, created_at, updated_at`
 
 func scan(row interface{ Scan(...any) error }) (Site, error) {
 	var s Site
 	var fav int
-	err := row.Scan(&s.ID, &s.Name, &s.Domain, &s.HomeCountry, &fav, &s.Position, &s.CreatedAt, &s.UpdatedAt)
+	err := row.Scan(&s.ID, &s.Name, &s.Domain, &s.HomeCountry, &s.Accent, &s.DefaultRange, &fav, &s.Position, &s.CreatedAt, &s.UpdatedAt)
 	s.HasFavicon = fav == 1
 	return s, err
 }
@@ -78,6 +87,34 @@ func NormaliseDomain(raw string) (string, error) {
 		return "", fmt.Errorf("%w: %q is not a valid domain", ErrInvalid, d)
 	}
 	return d, nil
+}
+
+var hexRe = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
+
+// validAccent accepts an empty string (follow the global accent) or a hex
+// colour, stored upper-case like the account-wide one.
+func validAccent(a string) (string, error) {
+	a = strings.TrimSpace(a)
+	if a == "" {
+		return "", nil
+	}
+	if !hexRe.MatchString(a) {
+		return "", fmt.Errorf("%w: accent must be a hex colour like #7C83E8", ErrInvalid)
+	}
+	return strings.ToUpper(a), nil
+}
+
+// validRange accepts an empty string (use the server default) or one of the
+// ranges the dashboard supports.
+func validRange(r string) (string, error) {
+	r = strings.TrimSpace(r)
+	if r == "" {
+		return "", nil
+	}
+	if !stats.ValidRange(r) {
+		return "", fmt.Errorf("%w: default_range must be one of %s", ErrInvalid, strings.Join(stats.Ranges, ", "))
+	}
+	return r, nil
 }
 
 func validCountry(cc string) (string, error) {
@@ -115,13 +152,23 @@ func (s *Store) Create(ctx context.Context, in Input) (Site, error) {
 			return Site{}, err
 		}
 	}
+	if in.Accent != nil {
+		if site.Accent, err = validAccent(*in.Accent); err != nil {
+			return Site{}, err
+		}
+	}
+	if in.DefaultRange != nil {
+		if site.DefaultRange, err = validRange(*in.DefaultRange); err != nil {
+			return Site{}, err
+		}
+	}
 	now := ids.Now()
 	site.CreatedAt, site.UpdatedAt = now, now
 	if err := s.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(position), 0) + 1 FROM sites`).Scan(&site.Position); err != nil {
 		return Site{}, err
 	}
-	_, err = s.db.ExecContext(ctx, `INSERT INTO sites (id, name, domain, home_country, position, created_at, updated_at) VALUES (?,?,?,?,?,?,?)`,
-		site.ID, site.Name, site.Domain, site.HomeCountry, site.Position, site.CreatedAt, site.UpdatedAt)
+	_, err = s.db.ExecContext(ctx, `INSERT INTO sites (id, name, domain, home_country, accent, default_range, position, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)`,
+		site.ID, site.Name, site.Domain, site.HomeCountry, site.Accent, site.DefaultRange, site.Position, site.CreatedAt, site.UpdatedAt)
 	if database.IsUniqueViolation(err) {
 		return Site{}, fmt.Errorf("%w: %s is already tracked", ErrInvalid, d)
 	}
@@ -157,8 +204,19 @@ func (s *Store) Update(ctx context.Context, id string, in Input) (Site, error) {
 			return Site{}, err
 		}
 	}
+	if in.Accent != nil {
+		if site.Accent, err = validAccent(*in.Accent); err != nil {
+			return Site{}, err
+		}
+	}
+	if in.DefaultRange != nil {
+		if site.DefaultRange, err = validRange(*in.DefaultRange); err != nil {
+			return Site{}, err
+		}
+	}
 	site.UpdatedAt = ids.Now()
-	_, err = s.db.ExecContext(ctx, `UPDATE sites SET name=?, domain=?, home_country=?, updated_at=? WHERE id=?`, site.Name, site.Domain, site.HomeCountry, site.UpdatedAt, site.ID)
+	_, err = s.db.ExecContext(ctx, `UPDATE sites SET name=?, domain=?, home_country=?, accent=?, default_range=?, updated_at=? WHERE id=?`,
+		site.Name, site.Domain, site.HomeCountry, site.Accent, site.DefaultRange, site.UpdatedAt, site.ID)
 	if database.IsUniqueViolation(err) {
 		return Site{}, fmt.Errorf("%w: %s is already tracked", ErrInvalid, site.Domain)
 	}

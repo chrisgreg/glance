@@ -1,7 +1,9 @@
 // Thin typed client for the Glance API.
 
-export type Range = '24h' | '7d' | '30d' | '90d'
-export const RANGES: Range[] = ['24h', '7d', '30d', '90d']
+export type Range = '24h' | '48h' | '7d' | '30d' | '90d' | '180d'
+export const RANGES: Range[] = ['24h', '48h', '7d', '30d', '90d', '180d']
+export const DEFAULT_RANGE: Range = '7d'
+export const isRange = (v: string): v is Range => (RANGES as string[]).includes(v)
 
 export interface Point {
   t: string
@@ -74,6 +76,10 @@ export interface Site {
   name: string
   domain: string
   home_country: string
+  /** Overrides the account-wide accent on this site's dashboard; '' follows it. */
+  accent: string
+  /** Range this site's dashboard opens on; '' uses DEFAULT_RANGE. */
+  default_range: string
   has_favicon: boolean
   position: number
   created_at: string
@@ -230,13 +236,14 @@ export const api = {
   sites: () => request<{ sites: Site[] }>('GET', '/api/v1/sites'),
   site: (id: string) => request<Site>('GET', `/api/v1/sites/${id}`),
   createSite: (input: { name?: string; domain: string }) => request<Site>('POST', '/api/v1/sites', input),
-  updateSite: (id: string, patch: Partial<Pick<Site, 'name' | 'domain' | 'home_country'>>) => request<Site>('PATCH', `/api/v1/sites/${id}`, patch),
+  updateSite: (id: string, patch: Partial<Pick<Site, 'name' | 'domain' | 'home_country' | 'accent' | 'default_range'>>) => request<Site>('PATCH', `/api/v1/sites/${id}`, patch),
   deleteSite: (id: string) => request<void>('DELETE', `/api/v1/sites/${id}`),
   reorderSites: (ids: string[]) => request<{ sites: Site[] }>('POST', '/api/v1/sites/reorder', { ids }),
   refreshFavicon: (id: string) => request<Site>('POST', `/api/v1/sites/${id}/refresh-favicon`),
   live: (id: string) => request<Live>('GET', `/api/v1/sites/${id}/live`),
   breakdown: (id: string, dim: Dim, range: Range, filters: Filters = {}) => request<{ dim: Dim; range: Range; rows: Row[] }>('GET', `/api/v1/sites/${id}/breakdown?dim=${dim}&range=${range}&limit=500${filterQuery(filters)}`),
-  stats: (id: string, range: Range, filters: Filters = {}) => request<{ site: Site; live: number; stats: Summary }>('GET', `/api/v1/sites/${id}/stats?range=${range}${filterQuery(filters)}`),
+  // An empty range asks the server for the site's own default; the answer says which it used.
+  stats: (id: string, range: Range | '', filters: Filters = {}) => request<{ site: Site; live: number; stats: Summary }>('GET', `/api/v1/sites/${id}/stats?range=${range}${filterQuery(filters)}`),
   status: () => request<Status>('GET', '/api/v1/status'),
   theme: () => request<{ accent: string; title: string }>('GET', '/api/v1/theme'),
   settings: () => request<GeneralSettings>('GET', '/api/v1/settings'),
