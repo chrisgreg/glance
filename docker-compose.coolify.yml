@@ -1,0 +1,25 @@
+# Git-based Coolify application: builds this repository and lets Coolify manage
+# networking and HTTPS. Set both admin credentials in Coolify's Environment Variables.
+services:
+  glance:
+    build:
+      context: ./server
+    restart: unless-stopped
+    expose:
+      - "8080"
+    volumes:
+      - "glance-data:/data"
+    environment:
+      GLANCE_PORT: "8080"
+      GLANCE_DATABASE_PATH: /data/glance.db
+      GLANCE_ADMIN_USER: ${GLANCE_ADMIN_USER:?}
+      GLANCE_ADMIN_PASSWORD: ${GLANCE_ADMIN_PASSWORD:?}
+      GLANCE_LOG_LEVEL: ${GLANCE_LOG_LEVEL:-info}
+      # Empty keeps the retention value saved in the dashboard (default: 7 days).
+      GLANCE_RETENTION_DAYS: ${GLANCE_RETENTION_DAYS:-}
+      GLANCE_MCP_TOKEN: ${GLANCE_MCP_TOKEN:-}
+      GLANCE_GOOGLE_CLIENT_ID: ${GLANCE_GOOGLE_CLIENT_ID:-}
+      GLANCE_GOOGLE_CLIENT_SECRET: ${GLANCE_GOOGLE_CLIENT_SECRET:-}
+
+volumes:
+  glance-data:
