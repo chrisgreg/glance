@@ -11,6 +11,7 @@ release with the matching section of this file as its notes.
 
 ### Added
 
+- Docker Compose configuration and deployment instructions for Coolify.
 - `48h` and `180d` date ranges on the dashboard, in the API and over MCP.
 - Four more accent swatches (Sky, Violet, Coral, Teal), and a per-site accent
   that replaces the account-wide colour while that site's dashboard is open.
