@@ -225,7 +225,21 @@ Polar only knows what your checkout tells it. Add `data-attribution` to the snip
 
 When you create a Polar checkout, read `glance.attribution()` (it returns `{ r: referrer, l: landing URL, t: timestamp }` or `null`) and pass `attr_ref` and `attr_landing` in the checkout `metadata`. Glance normalises them with the same rules as page views, so "Revenue by source" agrees with "Sources". Orders placed before you wire this up count towards totals but show as unattributed.
 
-## Deploying with Dokploy (or any compose host)
+## Deploying with Coolify
+
+Use `docker-compose.coolify.yml` for a Git-based application. It builds this repository's version of Glance, stores SQLite in a named volume, and lets Coolify manage networking and HTTPS. The Dokploy file requires an external `dokploy-network`, so it is not suitable for a standard Coolify deployment.
+
+1. Create a new application from your Git repository and select the branch containing `docker-compose.coolify.yml`.
+2. Under **Configuration → General**, select the **Docker Compose** build pack. Set **Base Directory** to `/` and **Docker Compose Location** to `/docker-compose.coolify.yml`, then load the Compose file.
+3. Under **Environment Variables**, set `GLANCE_ADMIN_USER` and `GLANCE_ADMIN_PASSWORD` (at least 8 characters). Both are required; no `.env` file needs to be committed or copied to the server.
+4. Set **Domains for glance** to `https://glance.example.com:8080`, replacing the hostname with your domain and pointing its DNS at the Coolify server. The `:8080` tells Coolify which internal container port to route to; visitors use `https://glance.example.com` without a port.
+5. Save and deploy. Check that the container becomes healthy, open the domain, and sign in. Use `https://glance.example.com/glance.js` in your tracking snippet.
+
+`GLANCE_LOG_LEVEL` defaults to `info`. Leave `GLANCE_RETENTION_DAYS` empty to use the dashboard's saved retention setting (7 days initially); setting it explicitly overrides the dashboard. `GLANCE_MCP_TOKEN` is optional and must be at least 16 characters when set. For Google Search Console, set both `GLANCE_GOOGLE_CLIENT_ID` and `GLANCE_GOOGLE_CLIENT_SECRET`, using `https://glance.example.com/api/v1/google/callback` as the OAuth redirect URI.
+
+The `glance-data` volume keeps `/data/glance.db` across redeployments, and the existing Dockerfile supplies the `/health` check. Keep this volume when redeploying to preserve analytics. Commit Compose changes to the selected Git branch and redeploy to apply them. See [Coolify's Docker Compose documentation](https://next.coolify.io/docs/applications/builds/docker-compose) for the platform setup.
+
+## Deploying with Dokploy
 
 Use `docker-compose.dokploy.yml`, not `docker-compose.yml`. It swaps the `./data` bind mount for a named volume (the bind mount is created root-owned on the host, and the image runs as uid 1000, so SQLite cannot write `/data/glance.db`), joins the external `dokploy-network` so Traefik can route to it, and drops the published port so the server is reachable only through your HTTPS proxy.
 
